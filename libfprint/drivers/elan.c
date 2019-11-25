@@ -223,6 +223,7 @@ elan_save_img_frame (FpiDeviceElan *elandev)
     {
       fp_dbg
         ("frame darker than background; finger present during calibration?");
+      g_free (frame);
       return -1;
     }
 
@@ -974,8 +975,6 @@ elan_change_state (FpImageDevice *idev)
 
   switch (next_state)
     {
-      break;
-
     case FP_IMAGE_DEVICE_STATE_AWAIT_FINGER_ON:
       /* activation completed or another enroll stage started */
       elan_calibrate (dev);
@@ -987,9 +986,8 @@ elan_change_state (FpImageDevice *idev)
 
     case FP_IMAGE_DEVICE_STATE_INACTIVE:
     case FP_IMAGE_DEVICE_STATE_AWAIT_FINGER_OFF:
-      if (self->dev_state != FP_IMAGE_DEVICE_STATE_INACTIVE ||
-          self->dev_state != FP_IMAGE_DEVICE_STATE_AWAIT_FINGER_OFF)
-        elan_stop_capture (dev);
+      elan_stop_capture (dev);
+      break;
     }
 }
 
