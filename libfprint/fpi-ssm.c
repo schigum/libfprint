@@ -2,6 +2,7 @@
  * Functions to assist with asynchronous driver <---> library communications
  * Copyright (C) 2007-2008 Daniel Drake <dsd@gentoo.org>
  * Copyright (C) 2019 Benjamin Berg <bberg@redhat.com>
+ * Copyright (C) 2019 Marco Trevisan <marco.trevisan@canonical.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -474,11 +475,11 @@ fpi_ssm_dup_error (FpiSsm *machine)
  * @data: a pointer to an #FpiSsm state machine
  *
  * Same as fpi_ssm_next_state(), but to be used as a callback
- * for an fpi_timeout_add() callback, when the state change needs
- * to happen after a timeout.
+ * for an fpi_device_add_timeout() callback, when the state
+ * change needs to happen after a timeout.
  *
  * Make sure to pass the #FpiSsm as the `ssm_data` argument
- * for that fpi_timeout_add() call.
+ * for that fpi_device_add_timeout() call.
  */
 void
 fpi_ssm_next_state_timeout_cb (FpDevice *dev,

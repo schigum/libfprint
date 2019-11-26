@@ -1,6 +1,7 @@
 /*
  * FpDevice - A fingerprint reader device
  * Copyright (C) 2019 Benjamin Berg <bberg@redhat.com>
+ * Copyright (C) 2019 Marco Trevisan <marco.trevisan@canonical.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -242,9 +243,18 @@ fpi_device_error_new (FpDeviceError error)
  * and similar calls.
  */
 GError *
-fpi_device_retry_new_msg (FpDeviceRetry error, const gchar *msg)
+fpi_device_retry_new_msg (FpDeviceRetry device_error,
+                          const gchar  *msg,
+                          ...)
 {
-  return g_error_new_literal (FP_DEVICE_RETRY, error, msg);
+  GError *error;
+  va_list args;
+
+  va_start (args, msg);
+  error = g_error_new_valist (FP_DEVICE_RETRY, device_error, msg, args);
+  va_end (args);
+
+  return error;
 }
 
 /**
@@ -256,9 +266,18 @@ fpi_device_retry_new_msg (FpDeviceRetry error, const gchar *msg)
  * and similar calls.
  */
 GError *
-fpi_device_error_new_msg (FpDeviceError error, const gchar *msg)
+fpi_device_error_new_msg (FpDeviceError device_error,
+                          const gchar  *msg,
+                          ...)
 {
-  return g_error_new_literal (FP_DEVICE_ERROR, error, msg);
+  GError *error;
+  va_list args;
+
+  va_start (args, msg);
+  error = g_error_new_valist (FP_DEVICE_ERROR, device_error, msg, args);
+  va_end (args);
+
+  return error;
 }
 
 static gboolean

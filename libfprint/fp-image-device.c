@@ -21,6 +21,7 @@
 #include "fpi-log.h"
 
 #include "fpi-image-device.h"
+#include "fpi-enums.h"
 #include "fpi-print.h"
 #include "fpi-image.h"
 
@@ -60,6 +61,21 @@ typedef struct
 
 G_DEFINE_ABSTRACT_TYPE_WITH_PRIVATE (FpImageDevice, fp_image_device, FP_TYPE_DEVICE)
 
+enum {
+  PROP_0,
+  PROP_FPI_STATE,
+  N_PROPS
+};
+
+static GParamSpec *properties[N_PROPS];
+
+enum {
+  FPI_STATE_CHANGED,
+
+  LAST_SIGNAL
+};
+
+static guint signals[LAST_SIGNAL] = { 0 };
 
 /*******************************************************/
 
@@ -73,27 +89,19 @@ static void
 fp_image_device_change_state (FpImageDevice *self, FpImageDeviceState state)
 {
   FpImageDevicePrivate *priv = fp_image_device_get_instance_private (self);
-  FpImageDeviceClass *cls = FP_IMAGE_DEVICE_GET_CLASS (self);
 
   /* Cannot change to inactive using this function. */
   g_assert (state != FP_IMAGE_DEVICE_STATE_INACTIVE);
 
   /* We might have been waiting for the finger to go OFF to start the
    * next operation. */
-  if (priv->pending_activation_timeout_id)
-    {
-      g_source_remove (priv->pending_activation_timeout_id);
-      priv->pending_activation_timeout_id = 0;
-    }
+  g_clear_handle_id (&priv->pending_activation_timeout_id, g_source_remove);
 
   fp_dbg ("Image device internal state change from %d to %d\n", priv->state, state);
 
   priv->state = state;
-
-  /* change_state is the only callback which is optional and does not
-   * have a default implementation. */
-  if (cls->change_state)
-    cls->change_state (self, state);
+  g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_FPI_STATE]);
+  g_signal_emit (self, signals[FPI_STATE_CHANGED], 0, priv->state);
 }
 
 static void
@@ -107,14 +115,11 @@ fp_image_device_activate (FpImageDevice *self)
   /* We don't have a neutral ACTIVE state, but we always will
    * go into WAIT_FINGER_ON afterwards. */
   priv->state = FP_IMAGE_DEVICE_STATE_AWAIT_FINGER_ON;
+  g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_FPI_STATE]);
 
   /* We might have been waiting for deactivation to finish before
    * starting the next operation. */
-  if (priv->pending_activation_timeout_id)
-    {
-      g_source_remove (priv->pending_activation_timeout_id);
-      priv->pending_activation_timeout_id = 0;
-    }
+  g_clear_handle_id (&priv->pending_activation_timeout_id, g_source_remove);
 
   fp_dbg ("Activating image device\n");
   cls->activate (self);
@@ -135,6 +140,7 @@ fp_image_device_deactivate (FpDevice *device)
       return;
     }
   priv->state = FP_IMAGE_DEVICE_STATE_INACTIVE;
+  g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_FPI_STATE]);
 
   fp_dbg ("Deactivating image device\n");
   cls->deactivate (self);
@@ -286,6 +292,7 @@ fp_image_device_finalize (GObject *object)
   FpImageDevicePrivate *priv = fp_image_device_get_instance_private (self);
 
   g_assert (priv->active == FALSE);
+  g_clear_handle_id (&priv->pending_activation_timeout_id, g_source_remove);
 
   G_OBJECT_CLASS (fp_image_device_parent_class)->finalize (object);
 }
@@ -303,12 +310,33 @@ fp_image_device_default_deactivate (FpImageDevice *self)
 }
 
 static void
+fp_image_device_get_property (GObject    *object,
+                              guint       prop_id,
+                              GValue     *value,
+                              GParamSpec *pspec)
+{
+  FpImageDevice *self = FP_IMAGE_DEVICE (object);
+  FpImageDevicePrivate *priv = fp_image_device_get_instance_private (self);
+
+  switch (prop_id)
+    {
+    case PROP_FPI_STATE:
+      g_value_set_enum (value, priv->state);
+      break;
+
+    default:
+      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+    }
+}
+
+static void
 fp_image_device_class_init (FpImageDeviceClass *klass)
 {
   GObjectClass *object_class = G_OBJECT_CLASS (klass);
   FpDeviceClass *fp_device_class = FP_DEVICE_CLASS (klass);
 
   object_class->finalize = fp_image_device_finalize;
+  object_class->get_property = fp_image_device_get_property;
 
   fp_device_class->open = fp_image_device_open;
   fp_device_class->close = fp_image_device_close;
@@ -322,6 +350,24 @@ fp_image_device_class_init (FpImageDeviceClass *klass)
   /* Default implementations */
   klass->activate = fp_image_device_default_activate;
   klass->deactivate = fp_image_device_default_deactivate;
+
+  properties[PROP_FPI_STATE] =
+    g_param_spec_enum ("fp-image-device-state",
+                       "Image Device State",
+                       "Private: The state of the image device",
+                       FP_TYPE_IMAGE_DEVICE_STATE,
+                       FP_IMAGE_DEVICE_STATE_INACTIVE,
+                       G_PARAM_STATIC_STRINGS | G_PARAM_READABLE);
+
+  signals[FPI_STATE_CHANGED] =
+    g_signal_new ("fp-image-device-state-changed",
+                  G_TYPE_FROM_CLASS (object_class),
+                  G_SIGNAL_RUN_FIRST,
+                  G_STRUCT_OFFSET (FpImageDeviceClass, change_state),
+                  NULL, NULL, NULL,
+                  G_TYPE_NONE, 1, FP_TYPE_IMAGE_DEVICE_STATE);
+
+  g_object_class_install_properties (object_class, N_PROPS, properties);
 }
 
 static void
@@ -739,7 +785,11 @@ fpi_image_device_deactivate_complete (FpImageDevice *self, GError *error)
 
   /* We might be waiting to be able to activate again. */
   if (priv->pending_activation_timeout_id)
-    fp_image_device_activate (self);
+    {
+      g_clear_handle_id (&priv->pending_activation_timeout_id, g_source_remove);
+      priv->pending_activation_timeout_id =
+        g_idle_add ((GSourceFunc) fp_image_device_activate, self);
+    }
 }
 
 /**
@@ -763,6 +813,7 @@ fpi_image_device_open_complete (FpImageDevice *self, GError *error)
   g_debug ("Image device open completed");
 
   priv->state = FP_IMAGE_DEVICE_STATE_INACTIVE;
+  g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_FPI_STATE]);
 
   fpi_device_open_complete (FP_DEVICE (self), error);
 }
@@ -788,6 +839,7 @@ fpi_image_device_close_complete (FpImageDevice *self, GError *error)
   g_return_if_fail (action == FP_DEVICE_ACTION_CLOSE);
 
   priv->state = FP_IMAGE_DEVICE_STATE_INACTIVE;
+  g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_FPI_STATE]);
 
   fpi_device_close_complete (FP_DEVICE (self), error);
 }
