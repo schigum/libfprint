@@ -168,7 +168,6 @@ usbexchange_loop (FpiSsm *ssm, FpDevice *_dev)
       transfer->short_is_error = TRUE;
       fpi_usb_transfer_submit (transfer, data->timeout, NULL,
                                async_send_cb, NULL);
-      fpi_usb_transfer_unref (transfer);
       break;
 
     case ACTION_RECEIVE:
@@ -180,7 +179,6 @@ usbexchange_loop (FpiSsm *ssm, FpDevice *_dev)
       transfer->ssm = ssm;
       fpi_usb_transfer_submit (transfer, data->timeout, NULL,
                                async_recv_cb, NULL);
-      fpi_usb_transfer_unref (transfer);
       break;
 
     default:
@@ -466,7 +464,6 @@ capture_chunk_async (FpDeviceVfs5011 *self,
   transfer->ssm = ssm;
   fpi_usb_transfer_submit (transfer, timeout, fpi_device_get_cancellable (FP_DEVICE (self)),
                            chunk_capture_callback, NULL);
-  fpi_usb_transfer_unref (transfer);
 }
 
 /*
@@ -745,7 +742,6 @@ activate_loop_complete (FpiSsm *ssm, FpDevice *_dev, GError *error)
       submit_image (ssm, self, dev);
       fpi_image_device_report_finger_status (dev, FALSE);
     }
-  fpi_ssm_free (ssm);
 
   self->loop_running = FALSE;
 
@@ -793,7 +789,6 @@ open_loop_complete (FpiSsm *ssm, FpDevice *_dev, GError *error)
   self->init_sequence.receive_buf = NULL;
 
   fpi_image_device_open_complete (dev, error);
-  fpi_ssm_free (ssm);
 }
 
 static void

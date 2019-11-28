@@ -219,7 +219,6 @@ async_send (FpiSsm        *ssm,
   transfer->short_is_error = TRUE;
   fpi_usb_transfer_submit (transfer, BULK_TIMEOUT, NULL,
                            async_send_cb, NULL);
-  fpi_usb_transfer_unref (transfer);
 }
 
 /* Callback of asynchronous recv */
@@ -282,7 +281,6 @@ async_recv (FpiSsm        *ssm,
   transfer->ssm = ssm;
   fpi_usb_transfer_submit (transfer, BULK_TIMEOUT, NULL,
                            async_recv_cb, NULL);
-  fpi_usb_transfer_unref (transfer);
 }
 
 static void async_load (FpiSsm        *ssm,
@@ -369,7 +367,6 @@ async_load (FpiSsm        *ssm,
   transfer->ssm = ssm;
   fpi_usb_transfer_submit (transfer, BULK_TIMEOUT, NULL,
                            async_load_cb, NULL);
-  fpi_usb_transfer_unref (transfer);
 }
 
 /* Submit asynchronous sleep */
@@ -960,7 +957,6 @@ m_loop_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
 
   self->active = FALSE;
 
-  fpi_ssm_free (ssm);
 }
 
 /* Init ssm states */
@@ -1268,7 +1264,6 @@ m_init_complete (FpiSsm *ssm, FpDevice *_dev, GError *error)
     }
 
   /* Free sequential state machine */
-  fpi_ssm_free (ssm);
 }
 
 /* Activate device */

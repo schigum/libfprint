@@ -382,6 +382,7 @@ fp_device_finalize (GObject *object)
 
   g_clear_pointer (&priv->device_id, g_free);
   g_clear_pointer (&priv->device_name, g_free);
+  g_clear_object (&priv->usb_device);
 
   G_OBJECT_CLASS (fp_device_parent_class)->finalize (object);
 }
@@ -2364,8 +2365,9 @@ fpi_device_enroll_progress (FpDevice *device,
                                 data->enroll_progress_data,
                                 error);
     }
-  if (error)
-    g_error_free (error);
+
+  g_clear_error (&error);
+  g_clear_object (&print);
 }
 
 

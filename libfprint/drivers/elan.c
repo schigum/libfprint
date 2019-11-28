@@ -406,7 +406,6 @@ elan_cmd_read (FpiSsm *ssm, FpDevice *dev)
     cancellable = fpi_device_get_cancellable (dev);
 
   fpi_usb_transfer_submit (transfer, self->cmd_timeout, cancellable, elan_cmd_cb, NULL);
-  fpi_usb_transfer_unref (transfer);
 }
 
 static void
@@ -449,7 +448,6 @@ elan_run_cmd (FpiSsm                *ssm,
                            cancellable,
                            elan_cmd_cb,
                            NULL);
-  fpi_usb_transfer_unref (transfer);
 }
 
 enum stop_capture_states {
@@ -479,7 +477,6 @@ stop_capture_complete (FpiSsm *ssm, FpDevice *_dev, GError *error)
 
   G_DEBUG_HERE ();
 
-  fpi_ssm_free (ssm);
 
   /* The device is inactive at this point. */
   self->dev_state = FP_IMAGE_DEVICE_STATE_INACTIVE;
@@ -606,7 +603,6 @@ capture_complete (FpiSsm *ssm, FpDevice *_dev, GError *error)
       fpi_image_device_session_error (dev, error);
     }
 
-  fpi_ssm_free (ssm);
 }
 
 static void
@@ -789,7 +785,6 @@ calibrate_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
       elan_capture (dev);
     }
 
-  fpi_ssm_free (ssm);
 }
 
 static void
@@ -886,7 +881,6 @@ activate_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
 
   fpi_image_device_activate_complete (idev, error);
 
-  fpi_ssm_free (ssm);
 }
 
 static void

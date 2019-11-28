@@ -101,6 +101,7 @@ fp_print_finalize (GObject *object)
   g_clear_pointer (&self->description, g_free);
   g_clear_pointer (&self->enroll_date, g_date_free);
   g_clear_pointer (&self->data, g_variant_unref);
+  g_clear_pointer (&self->prints, g_ptr_array_unref);
 
   G_OBJECT_CLASS (fp_print_parent_class)->finalize (object);
 }
@@ -579,7 +580,10 @@ fpi_print_set_type (FpPrint    *print,
 
   print->type = type;
   if (print->type == FP_PRINT_NBIS)
-    print->prints = g_ptr_array_new_with_free_func (g_free);
+    {
+      g_assert_null (print->prints);
+      print->prints = g_ptr_array_new_with_free_func (g_free);
+    }
   g_object_notify_by_pspec (G_OBJECT (print), properties[PROP_FPI_TYPE]);
 }
 
@@ -974,6 +978,7 @@ fp_print_deserialize (const guchar *data,
   g_autoptr(FpPrint) result = NULL;
   g_autoptr(GVariant) raw_value = NULL;
   g_autoptr(GVariant) value = NULL;
+  g_autoptr(GVariant) print_data = NULL;
   guchar *aligned_data = NULL;
   GDate *date = NULL;
   guint8 finger_int8;
@@ -985,7 +990,6 @@ fp_print_deserialize (const guchar *data,
   const gchar *driver;
   const gchar *device_id;
   gboolean device_stored;
-  GVariant *print_data;
 
   g_assert (data);
   g_assert (length > 3);
@@ -1016,7 +1020,7 @@ fp_print_deserialize (const guchar *data,
     value = g_variant_get_normal_form (raw_value);
 
   g_variant_get (value,
-                 "(issbymsmsi@a{sv}v)",
+                 "(i&s&sbymsmsi@a{sv}v)",
                  &type,
                  &driver,
                  &device_id,

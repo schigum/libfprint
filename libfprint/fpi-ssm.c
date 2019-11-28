@@ -51,6 +51,7 @@
  *
  * To start a ssm, you pass in a completion callback function to fpi_ssm_start()
  * which gets called when the ssm completes (both on error and on failure).
+ * Starting a ssm also takes ownership of it.
  *
  * To iterate to the next state, call fpi_ssm_next_state(). It is legal to
  * attempt to iterate beyond the final state - this is equivalent to marking
@@ -58,6 +59,7 @@
  *
  * To mark successful completion of a SSM, either iterate beyond the final
  * state or call fpi_ssm_mark_completed() from any state.
+ * This will also invalidate the machine, freeing it.
  *
  * To mark failed completion of a SSM, call fpi_ssm_mark_failed() from any
  * state. You must pass a non-zero error code.
@@ -126,7 +128,6 @@ fpi_ssm_new (FpDevice             *dev,
  * @ssm_data_destroy: (nullable): #GDestroyNotify for @ssm_data
  *
  * Sets @machine's data (freeing the existing data, if any).
- *
  */
 void
 fpi_ssm_set_data (FpiSsm        *machine,
@@ -184,12 +185,16 @@ __ssm_call_handler (FpiSsm *machine)
 
 /**
  * fpi_ssm_start:
- * @ssm: an #FpiSsm state machine
+ * @ssm: (transfer full): an #FpiSsm state machine
  * @callback: the #FpiSsmCompletedCallback callback to call on completion
  *
  * Starts a state machine. You can also use this function to restart
  * a completed or failed state machine. The @callback will be called
  * on completion.
+ *
+ * Note that @ssm will be stolen when this function is called.
+ * So that all associated data will be free'ed automatically, after the
+ * @callback is ran.
  */
 void
 fpi_ssm_start (FpiSsm *ssm, FpiSsmCompletedCallback callback)
@@ -212,7 +217,6 @@ __subsm_complete (FpiSsm *ssm, FpDevice *_dev, GError *error)
     fpi_ssm_mark_failed (parent, error);
   else
     fpi_ssm_next_state (parent);
-  fpi_ssm_free (ssm);
 }
 
 /**
@@ -261,6 +265,7 @@ fpi_ssm_mark_completed (FpiSsm *machine)
 
       machine->callback (machine, machine->dev, error);
     }
+  fpi_ssm_free (machine);
 }
 
 /**
@@ -268,7 +273,7 @@ fpi_ssm_mark_completed (FpiSsm *machine)
  * @machine: an #FpiSsm state machine
  * @error: a #GError
  *
- * Mark a state machine as failed with @error as the error code.
+ * Mark a state machine as failed with @error as the error code, completing it.
  */
 void
 fpi_ssm_mark_failed (FpiSsm *machine, GError *error)
@@ -361,6 +366,8 @@ fpi_ssm_next_state_delayed (FpiSsm *machine,
  * @state: the state to jump to
  *
  * Jump to the @state state, bypassing intermediary states.
+ * If @state is the last state, the machine won't be completed unless
+ * fpi_ssm_mark_completed() isn't explicitly called.
  */
 void
 fpi_ssm_jump_to_state (FpiSsm *machine, int state)
@@ -495,7 +502,7 @@ fpi_ssm_next_state_timeout_cb (FpDevice *dev,
  * fpi_ssm_usb_transfer_cb:
  * @transfer: a #FpiUsbTransfer
  * @device: a #FpDevice
- * @ssm_data: User data (unused)
+ * @unused_data: User data (unused)
  * @error: The #GError or %NULL
  *
  * Can be used in as a #FpiUsbTransfer callback handler to automatically
@@ -505,7 +512,7 @@ fpi_ssm_next_state_timeout_cb (FpDevice *dev,
  */
 void
 fpi_ssm_usb_transfer_cb (FpiUsbTransfer *transfer, FpDevice *device,
-                         gpointer ssm_data, GError *error)
+                         gpointer unused_data, GError *error)
 {
   g_return_if_fail (transfer->ssm);
 
@@ -513,4 +520,33 @@ fpi_ssm_usb_transfer_cb (FpiUsbTransfer *transfer, FpDevice *device,
     fpi_ssm_mark_failed (transfer->ssm, error);
   else
     fpi_ssm_next_state (transfer->ssm);
+}
+
+/**
+ * fpi_ssm_usb_transfer_with_weak_pointer_cb:
+ * @transfer: a #FpiUsbTransfer
+ * @device: a #FpDevice
+ * @weak_ptr: A #gpointer pointer to nullify. You can pass a pointer to any
+ *            #gpointer to nullify when the callback is completed. I.e a
+ *            pointer to the current #FpiUsbTransfer.
+ * @error: The #GError or %NULL
+ *
+ * Can be used in as a #FpiUsbTransfer callback handler to automatically
+ * advance or fail a statemachine on transfer completion.
+ * Passing a #gpointer* as @weak_ptr permits to nullify it once we're done
+ * with the transfer.
+ *
+ * Make sure to set the #FpiSsm on the transfer.
+ */
+void
+fpi_ssm_usb_transfer_with_weak_pointer_cb (FpiUsbTransfer *transfer,
+                                           FpDevice *device, gpointer weak_ptr,
+                                           GError *error)
+{
+  g_return_if_fail (transfer->ssm);
+
+  if (weak_ptr)
+    g_nullify_pointer ((gpointer *) weak_ptr);
+
+  fpi_ssm_usb_transfer_cb (transfer, device, weak_ptr, error);
 }

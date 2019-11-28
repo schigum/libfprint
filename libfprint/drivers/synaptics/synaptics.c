@@ -205,7 +205,7 @@ static void
 synaptics_cmd_run_state (FpiSsm   *ssm,
                          FpDevice *dev)
 {
-  g_autoptr(FpiUsbTransfer) transfer = NULL;
+  FpiUsbTransfer *transfer;
   FpiDeviceSynaptics *self = FPI_DEVICE_SYNAPTICS (dev);
 
   switch (fpi_ssm_get_cur_state (ssm))
@@ -219,7 +219,7 @@ synaptics_cmd_run_state (FpiSsm   *ssm,
                                    NULL,
                                    fpi_ssm_usb_transfer_cb,
                                    NULL);
-          g_clear_pointer (&self->cmd_pending_transfer, fpi_usb_transfer_unref);
+          self->cmd_pending_transfer = NULL;
         }
       else
         {
@@ -290,7 +290,6 @@ cmd_ssm_done (FpiSsm *ssm, FpDevice *dev, GError *error)
     }
   self->cmd_complete_on_removal = FALSE;
   g_clear_pointer (&self->cmd_complete_error, g_error_free);
-  fpi_ssm_free (ssm);
 }
 
 static void
@@ -318,7 +317,7 @@ synaptics_sensor_cmd (FpiDeviceSynaptics *self,
                       gssize              payload_len,
                       SynCmdMsgCallback   callback)
 {
-  g_autoptr(FpiUsbTransfer) transfer = NULL;
+  FpiUsbTransfer *transfer;
   guint8 real_seq_num;
   gint msg_len;
   gint res;
@@ -803,7 +802,7 @@ enroll (FpDevice *device)
   GVariant *uid = NULL;
   const gchar *username;
   guint finger;
-  g_autofree gchar *user_id;
+  g_autofree gchar *user_id = NULL;
   gssize user_id_len;
   g_autofree guint8 *payload = NULL;
   const GDate *date;
@@ -817,9 +816,9 @@ enroll (FpDevice *device)
   date = fp_print_get_enroll_date (print);
   if (date && g_date_valid (date))
     {
-      y = date->year;
-      m = date->month;
-      d = date->day;
+      y = g_date_get_year (date);
+      m = g_date_get_month (date);
+      d = g_date_get_day (date);
     }
   else
     {
@@ -985,7 +984,6 @@ dev_probe (FpDevice *device)
   transfer->buffer[0] = SENSOR_CMD_GET_VERSION;
   if (!fpi_usb_transfer_submit_sync (transfer, 1000, &error))
     goto err_close;
-  fpi_usb_transfer_unref (transfer);
 
 
   transfer = fpi_usb_transfer_new (device);
@@ -1040,7 +1038,6 @@ dev_probe (FpDevice *device)
   fp_dbg ("Target: %d", self->mis_version.target);
   fp_dbg ("Product: %d", self->mis_version.product);
 
-  fpi_usb_transfer_unref (transfer);
 
   /* We need at least firmware version 10.1, and for 10.1 build 2989158 */
   if (self->mis_version.version_major < 10 ||
