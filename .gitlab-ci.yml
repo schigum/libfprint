@@ -1,5 +1,5 @@
 variables:
-  FEDORA_TAG: rawhide
+  FEDORA_TAG: "2019-12-12"
   FEDORA_VERSION: rawhide
   FEDORA_IMAGE: "$CI_REGISTRY/libfprint/$CI_PROJECT_NAME/fedora/$FEDORA_VERSION:$FEDORA_TAG"
   BUNDLE: "org.freedesktop.libfprint.Demo.flatpak"
@@ -53,9 +53,14 @@ test:
     variables:
       - $CI_PIPELINE_SOURCE == "schedule"
   script:
-    - meson --werror -Ddrivers=all . _build
+    - meson --werror -Ddrivers=all -Db_coverage=true . _build
     - ninja -C _build
     - meson test -C _build --verbose --no-stdsplit
+    - ninja -C _build coverage
+  artifacts:
+    paths:
+      - _build/meson-logs
+    expire_in: 1 week
 
 test_valgrind:
   stage: test
@@ -140,6 +145,7 @@ container_fedora_build:
       flatpak-builder
       gcc
       gcc-c++
+      gcovr
       git
       glib2-devel
       glibc-devel
