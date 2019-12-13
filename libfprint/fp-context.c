@@ -57,6 +57,29 @@ enum {
 };
 static guint signals[LAST_SIGNAL] = { 0 };
 
+static gboolean
+is_driver_allowed (const gchar *driver)
+{
+  g_auto(GStrv) allowed_drivers = NULL;
+  const char *fp_allowed_drivers_env;
+  int i;
+
+  g_return_val_if_fail (driver, TRUE);
+
+  fp_allowed_drivers_env = g_getenv ("FP_DRIVERS_WHITELIST");
+
+  if (!fp_allowed_drivers_env)
+    return TRUE;
+
+  allowed_drivers = g_strsplit (fp_allowed_drivers_env, ":", -1);
+
+  for (i = 0; allowed_drivers && allowed_drivers[i]; ++i)
+    if (g_strcmp0 (driver, allowed_drivers[i]) == 0)
+      return TRUE;
+
+  return FALSE;
+}
+
 static void
 async_device_init_done_cb (GObject *source_object, GAsyncResult *res, gpointer user_data)
 {
@@ -106,6 +129,12 @@ usb_device_added_cb (FpContext *self, GUsbDevice *device, GUsbContext *usb_ctx)
       const FpIdEntry *entry;
 
       if (cls->type != FP_DEVICE_TYPE_USB)
+        {
+          g_type_class_unref (cls);
+          continue;
+        }
+
+      if (!is_driver_allowed (cls->id))
         {
           g_type_class_unref (cls);
           continue;
@@ -316,6 +345,12 @@ fp_context_enumerate (FpContext *context)
 
       if (cls->type != FP_DEVICE_TYPE_VIRTUAL)
         continue;
+
+      if (!is_driver_allowed (cls->id))
+        {
+          g_type_class_unref (cls);
+          continue;
+        }
 
       for (entry = cls->id_table; entry->pid; entry++)
         {
