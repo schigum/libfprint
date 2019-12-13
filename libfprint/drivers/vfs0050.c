@@ -399,7 +399,7 @@ interrupt_callback (FpiUsbTransfer *transfer, FpDevice *device,
                     gpointer user_data, GError *error)
 {
   FpDeviceVfs0050 *self = FPI_DEVICE_VFS0050 (device);
-  char *interrupt = transfer->buffer;
+  unsigned char *interrupt = transfer->buffer;
 
   /* we expect a cancellation error when the device is deactivating
    * go into the SSM_CLEAR_EP2 state in that case. */
@@ -477,16 +477,6 @@ receive_callback (FpiUsbTransfer *transfer, FpDevice *device,
       fpi_ssm_jump_to_state (transfer->ssm,
                              fpi_ssm_get_cur_state (transfer->ssm));
     }
-}
-
-/* SSM stub to prepare device to another scan after orange light was on */
-static void
-another_scan (FpDevice *dev,
-              void     *data)
-{
-  FpiSsm *ssm = data;
-
-  fpi_ssm_jump_to_state (ssm, SSM_TURN_ON);
 }
 
 /* Main SSM loop */
@@ -605,7 +595,8 @@ activate_ssm (FpiSsm *ssm, FpDevice *dev)
         /* Receive chunk of data */
         transfer = fpi_usb_transfer_new (dev);
         fpi_usb_transfer_fill_bulk_full (transfer, 0x82,
-                                         (void *) self->lines_buffer + self->bytes,
+                                         (guint8 *)
+                                         (self->lines_buffer + self->bytes),
                                          VFS_USB_BUFFER_SIZE, NULL);
         transfer->ssm = ssm;
         fpi_usb_transfer_submit (transfer, VFS_USB_TIMEOUT, NULL,
@@ -618,8 +609,7 @@ activate_ssm (FpiSsm *ssm, FpDevice *dev)
       clear_data (self);
 
       /* Wait for probable vdev->active changing */
-      fpi_device_add_timeout (dev, VFS_SSM_TIMEOUT,
-                              fpi_ssm_next_state_timeout_cb, ssm);
+      fpi_ssm_next_state_delayed (ssm, VFS_SSM_TIMEOUT, NULL);
       break;
 
     case SSM_NEXT_RECEIVE:
@@ -638,8 +628,8 @@ activate_ssm (FpiSsm *ssm, FpDevice *dev)
 
     case SSM_WAIT_ANOTHER_SCAN:
       /* Orange light is on now */
-      fpi_device_add_timeout (dev, VFS_SSM_ORANGE_TIMEOUT,
-                              another_scan, ssm);
+      fpi_ssm_jump_to_state_delayed (ssm, SSM_TURN_ON, VFS_SSM_ORANGE_TIMEOUT,
+                                     NULL);
       break;
 
     default:

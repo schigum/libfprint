@@ -1,6 +1,6 @@
 /*
- * Internal/private definitions for libfprint
- * Copyright (C) 2019 Marco Trevisan <marco.trevisan@canonical.com>
+ * FpImageDevice - An image based fingerprint reader device
+ * Copyright (C) 2019 Benjamin Berg <bberg@redhat.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -19,7 +19,25 @@
 
 #pragma once
 
-#include "fpi-log.h"
-#include "fpi-image.h"
 #include "fpi-image-device.h"
-#include "fpi-minutiae.h"
+
+#define IMG_ENROLL_STAGES 5
+
+typedef struct
+{
+  FpImageDeviceState state;
+  gboolean           active;
+  gboolean           cancelling;
+
+  gboolean           enroll_await_on_pending;
+  gint               enroll_stage;
+
+  guint              pending_activation_timeout_id;
+  gboolean           pending_activation_timeout_waiting_finger_off;
+
+  gint               bz3_threshold;
+} FpImageDevicePrivate;
+
+
+void fpi_image_device_activate (FpImageDevice *image_device);
+void fpi_image_device_deactivate (FpImageDevice *image_device);

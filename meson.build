@@ -10,9 +10,6 @@ project('libfprint', [ 'c', 'cpp' ],
 
 gnome = import('gnome')
 
-add_project_arguments([ '-D_GNU_SOURCE' ], language: 'c')
-add_project_arguments([ '-DG_LOG_DOMAIN="libfprint"' ], language: 'c')
-
 libfprint_conf = configuration_data()
 
 cc = meson.get_compiler('c')
@@ -23,19 +20,53 @@ glib_min_version = '2.56'
 glib_version_def = 'GLIB_VERSION_@0@_@1@'.format(
     glib_min_version.split('.')[0], glib_min_version.split('.')[1])
 common_cflags = cc.get_supported_arguments([
-    '-fgnu89-inline',
-    '-std=gnu99',
     '-Wall',
+    '-Wcast-align',
+    '-Wformat-nonliteral',
+    '-Wformat-security',
+    '-Wformat=2',
+    '-Wignored-qualifiers',
+    '-Wlogical-op',
+    '-Wmissing-declarations',
+    '-Wmissing-format-attribute',
+    '-Wmissing-include-dirs',
+    '-Wmissing-noreturn',
+    '-Wpointer-arith',
+    '-Wshadow',
     '-Wtype-limits',
     '-Wundef',
     '-Wunused',
-    '-Wstrict-prototypes',
-    '-Werror-implicit-function-declaration',
-    '-Wno-pointer-sign',
-    '-Wshadow',
+    '-Werror=address',
+    '-Werror=array-bounds',
+    '-Werror=empty-body',
+    '-Werror=init-self',
+    '-Werror=int-to-pointer-cast',
+    '-Werror=main',
+    '-Werror=missing-braces',
+    '-Werror=nonnull',
+    '-Werror=redundant-decls',
+    '-Werror=return-type',
+    '-Werror=sequence-point',
+    '-Werror=trigraphs',
+    '-Werror=write-strings',
+    '-fno-strict-aliasing',
     '-DGLIB_VERSION_MIN_REQUIRED=' + glib_version_def,
     '-DGLIB_VERSION_MAX_ALLOWED=' + glib_version_def,
+    '-D_GNU_SOURCE',
+    '-DG_LOG_DOMAIN="libfprint"',
 ])
+c_cflags = cc.get_supported_arguments([
+    '-std=gnu99',
+    '-Wimplicit-function-declaration',
+    '-Wmissing-prototypes',
+    '-Wnested-externs',
+    '-Wold-style-definition',
+    '-Wstrict-prototypes',
+    '-Werror=implicit',
+    '-Werror=pointer-to-int-cast',
+])
+add_project_arguments(common_cflags + c_cflags, language: 'c')
+add_project_arguments(common_cflags, language: 'cpp')
 
 # maintaining compatibility with the previous libtool versioning
 # current = binary - interface
@@ -131,14 +162,22 @@ foreach driver: drivers
 endforeach
 
 # Export the drivers' types to the core code
-drivers_type_list = '#include <glib-object.h>\n'
-drivers_type_func = 'void fpi_get_driver_types(GArray *drivers)\n{\n\tGType t;\n'
+drivers_type_list = []
+drivers_type_func = []
+drivers_type_list += '#include <glib-object.h>'
+drivers_type_list += '#include "fpi-context.h"'
+drivers_type_list += ''
+drivers_type_func += 'void fpi_get_driver_types (GArray *drivers)'
+drivers_type_func += '  {'
+drivers_type_func += '    GType t;'
+drivers_type_func += ''
 foreach driver: drivers
-    drivers_type_list += 'extern GType (fpi_device_' + driver + '_get_type) (void);\n'
-    drivers_type_func += '	t = fpi_device_' + driver + '_get_type(); g_array_append_val (drivers, t);\n'
+    drivers_type_list += 'extern GType (fpi_device_' + driver + '_get_type) (void);'
+    drivers_type_func += '    t = fpi_device_' + driver + '_get_type ();'
+    drivers_type_func += '    g_array_append_val (drivers, t);\n'
 endforeach
 drivers_type_list += ''
-drivers_type_func += '};'
+drivers_type_func += '}'
 
 root_inc = include_directories('.')
 
@@ -172,10 +211,7 @@ if get_option('gtk-examples')
     subdir('demo')
 endif
 
-# The tests require introspeciton support to run
-if get_option('introspection')
-    subdir('tests')
-endif
+subdir('tests')
 
 pkgconfig = import('pkgconfig')
 pkgconfig.generate(

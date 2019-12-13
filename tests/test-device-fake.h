@@ -1,5 +1,6 @@
 /*
- * Internal/private definitions for libfprint
+ * Virtual driver for device debugging
+ *
  * Copyright (C) 2019 Marco Trevisan <marco.trevisan@canonical.com>
  *
  * This library is free software; you can redistribute it and/or
@@ -19,7 +20,24 @@
 
 #pragma once
 
-#include "fpi-log.h"
-#include "fpi-image.h"
-#include "fpi-image-device.h"
-#include "fpi-minutiae.h"
+#include "fpi-device.h"
+
+#define FPI_TYPE_DEVICE_FAKE (fpi_device_fake_get_type ())
+G_DECLARE_FINAL_TYPE (FpiDeviceFake, fpi_device_fake, FPI, DEVICE_FAKE, FpDevice)
+
+struct _FpiDeviceFake
+{
+  FpDevice       parent;
+
+  gpointer       last_called_function;
+
+  GError        *ret_error;
+  FpPrint       *ret_print;
+  FpPrint       *ret_match;
+  FpiMatchResult ret_result;
+  FpImage       *ret_image;
+  GPtrArray     *ret_list;
+
+  gpointer       action_data;
+  gpointer       user_data;
+};

@@ -1,6 +1,7 @@
 /*
- * Internal/private definitions for libfprint
- * Copyright (C) 2019 Marco Trevisan <marco.trevisan@canonical.com>
+ * FPrint Print handling
+ * Copyright (C) 2007 Daniel Drake <dsd@gentoo.org>
+ * Copyright (C) 2019 Benjamin Berg <bberg@redhat.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -17,9 +18,29 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#pragma once
-
-#include "fpi-log.h"
+#include "fpi-print.h"
 #include "fpi-image.h"
-#include "fpi-image-device.h"
-#include "fpi-minutiae.h"
+
+#include <nbis.h>
+
+struct _FpPrint
+{
+  GInitiallyUnowned parent_instance;
+
+  FpPrintType       type;
+
+  gchar            *driver;
+  gchar            *device_id;
+  gboolean          device_stored;
+
+  FpImage          *image;
+
+  /* Metadata */
+  FpFinger   finger;
+  gchar     *username;
+  gchar     *description;
+  GDate     *enroll_date;
+
+  GVariant  *data;
+  GPtrArray *prints;
+};

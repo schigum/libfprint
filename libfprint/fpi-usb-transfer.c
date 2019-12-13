@@ -298,7 +298,7 @@ fpi_usb_transfer_fill_interrupt_full (FpiUsbTransfer *transfer,
   transfer->free_buffer = free_func;
 }
 
-void
+static void
 transfer_finish_cb (GObject *source_object, GAsyncResult *res, gpointer user_data)
 {
   GError *error = NULL;
@@ -454,6 +454,7 @@ fpi_usb_transfer_submit_sync (FpiUsbTransfer *transfer,
                               GError        **error)
 {
   gboolean res;
+  gsize actual_length;
 
   g_return_val_if_fail (transfer, FALSE);
 
@@ -469,7 +470,7 @@ fpi_usb_transfer_submit_sync (FpiUsbTransfer *transfer,
                                         transfer->endpoint,
                                         transfer->buffer,
                                         transfer->length,
-                                        &transfer->actual_length,
+                                        &actual_length,
                                         timeout_ms,
                                         NULL,
                                         error);
@@ -485,7 +486,7 @@ fpi_usb_transfer_submit_sync (FpiUsbTransfer *transfer,
                                            transfer->idx,
                                            transfer->buffer,
                                            transfer->length,
-                                           &transfer->actual_length,
+                                           &actual_length,
                                            timeout_ms,
                                            NULL,
                                            error);
@@ -496,7 +497,7 @@ fpi_usb_transfer_submit_sync (FpiUsbTransfer *transfer,
                                              transfer->endpoint,
                                              transfer->buffer,
                                              transfer->length,
-                                             &transfer->actual_length,
+                                             &actual_length,
                                              timeout_ms,
                                              NULL,
                                              error);
@@ -511,6 +512,8 @@ fpi_usb_transfer_submit_sync (FpiUsbTransfer *transfer,
 
   if (!res)
     transfer->actual_length = -1;
+  else
+    transfer->actual_length = actual_length;
 
   return res;
 }

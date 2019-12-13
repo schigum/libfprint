@@ -1,5 +1,5 @@
 /*
- * Internal/private definitions for libfprint
+ * Unit tests for libfprint
  * Copyright (C) 2019 Marco Trevisan <marco.trevisan@canonical.com>
  *
  * This library is free software; you can redistribute it and/or
@@ -17,9 +17,21 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#pragma once
+#include <glib.h>
 
-#include "fpi-log.h"
-#include "fpi-image.h"
-#include "fpi-image-device.h"
-#include "fpi-minutiae.h"
+void fpt_setup_virtual_device_environment (void);
+void fpt_teardown_virtual_device_environment (void);
+
+typedef struct _FptContext
+{
+  FpContext *fp_context;
+  FpDevice  *device;
+  gpointer   user_data;
+} FptContext;
+
+FptContext * fpt_context_new (void);
+FptContext * fpt_context_new_with_virtual_imgdev (void);
+
+void fpt_context_free (FptContext *test_context);
+
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (FptContext, fpt_context_free)

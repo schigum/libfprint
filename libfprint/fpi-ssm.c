@@ -81,6 +81,7 @@
 struct _FpiSsm
 {
   FpDevice               *dev;
+  const char             *name;
   FpiSsm                 *parentsm;
   gpointer                ssm_data;
   GDestroyNotify          ssm_data_destroy;
@@ -88,6 +89,8 @@ struct _FpiSsm
   int                     cur_state;
   gboolean                completed;
   GSource                *timeout;
+  GCancellable           *cancellable;
+  gulong                  cancellable_id;
   GError                 *error;
   FpiSsmCompletedCallback callback;
   FpiSsmHandlerCallback   handler;
@@ -101,22 +104,40 @@ struct _FpiSsm
  *
  * Allocate a new ssm, with @nr_states states. The @handler callback
  * will be called after each state transition.
+ * This is a macro that calls fpi_ssm_new_full() using the stringified
+ * version of @nr_states, so will work better with named parameters.
+ *
+ * Returns: a new #FpiSsm state machine
+ */
+
+/**
+ * fpi_ssm_new_full:
+ * @dev: a #fp_dev fingerprint device
+ * @handler: the callback function
+ * @nr_states: the number of states
+ * @machine_name: the name of the state machine (for debug purposes)
+ *
+ * Allocate a new ssm, with @nr_states states. The @handler callback
+ * will be called after each state transition.
  *
  * Returns: a new #FpiSsm state machine
  */
 FpiSsm *
-fpi_ssm_new (FpDevice             *dev,
-             FpiSsmHandlerCallback handler,
-             int                   nr_states)
+fpi_ssm_new_full (FpDevice             *dev,
+                  FpiSsmHandlerCallback handler,
+                  int                   nr_states,
+                  const char           *machine_name)
 {
   FpiSsm *machine;
 
   BUG_ON (nr_states < 1);
+  BUG_ON (handler == NULL);
 
   machine = g_new0 (FpiSsm, 1);
   machine->handler = handler;
   machine->nr_states = nr_states;
   machine->dev = dev;
+  machine->name = g_strdup (machine_name);
   machine->completed = TRUE;
   return machine;
 }
@@ -155,6 +176,84 @@ fpi_ssm_get_data (FpiSsm *machine)
   return machine->ssm_data;
 }
 
+static void
+fpi_ssm_clear_delayed_action (FpiSsm *machine)
+{
+  if (machine->cancellable_id)
+    {
+      g_cancellable_disconnect (machine->cancellable, machine->cancellable_id);
+      machine->cancellable_id = 0;
+    }
+
+  g_clear_object (&machine->cancellable);
+  g_clear_pointer (&machine->timeout, g_source_destroy);
+}
+
+typedef struct _CancelledActionIdleData
+{
+  gulong        cancellable_id;
+  GCancellable *cancellable;
+} CancelledActionIdleData;
+
+static gboolean
+on_delayed_action_cancelled_idle (gpointer user_data)
+{
+  CancelledActionIdleData *data = user_data;
+
+  g_cancellable_disconnect (data->cancellable, data->cancellable_id);
+  g_object_unref (data->cancellable);
+  g_free (data);
+
+  return G_SOURCE_REMOVE;
+}
+
+static void
+on_delayed_action_cancelled (GCancellable *cancellable,
+                             FpiSsm       *machine)
+{
+  CancelledActionIdleData *data;
+
+  fp_dbg ("[%s] %s cancelled delayed state change",
+          fp_device_get_driver (machine->dev), machine->name);
+
+  g_clear_pointer (&machine->timeout, g_source_destroy);
+
+  data = g_new0 (CancelledActionIdleData, 1);
+  data->cancellable = g_steal_pointer (&machine->cancellable);
+  data->cancellable_id = machine->cancellable_id;
+  machine->cancellable_id = 0;
+
+  g_idle_add_full (G_PRIORITY_HIGH_IDLE, on_delayed_action_cancelled_idle,
+                   data, NULL);
+}
+
+static void
+fpi_ssm_set_delayed_action_timeout (FpiSsm        *machine,
+                                    int            delay,
+                                    FpTimeoutFunc  callback,
+                                    GCancellable  *cancellable,
+                                    gpointer       user_data,
+                                    GDestroyNotify destroy_func)
+{
+  BUG_ON (machine->completed);
+  BUG_ON (machine->timeout != NULL);
+
+  fpi_ssm_clear_delayed_action (machine);
+
+  if (cancellable != NULL)
+    {
+      g_set_object (&machine->cancellable, cancellable);
+
+      machine->cancellable_id =
+        g_cancellable_connect (machine->cancellable,
+                               G_CALLBACK (on_delayed_action_cancelled),
+                               machine, NULL);
+    }
+
+  machine->timeout = fpi_device_add_timeout (machine->dev, delay, callback,
+                                             user_data, destroy_func);
+}
+
 /**
  * fpi_ssm_free:
  * @machine: an #FpiSsm state machine
@@ -168,10 +267,13 @@ fpi_ssm_free (FpiSsm *machine)
   if (!machine)
     return;
 
+  BUG_ON (machine->timeout != NULL);
+
   if (machine->ssm_data_destroy)
     g_clear_pointer (&machine->ssm_data, machine->ssm_data_destroy);
   g_clear_pointer (&machine->error, g_error_free);
-  g_clear_pointer (&machine->timeout, g_source_destroy);
+  g_clear_pointer (&machine->name, g_free);
+  fpi_ssm_clear_delayed_action (machine);
   g_free (machine);
 }
 
@@ -179,7 +281,8 @@ fpi_ssm_free (FpiSsm *machine)
 static void
 __ssm_call_handler (FpiSsm *machine)
 {
-  fp_dbg ("%p entering state %d", machine, machine->cur_state);
+  fp_dbg ("[%s] %s entering state %d", fp_device_get_driver (machine->dev),
+          machine->name, machine->cur_state);
   machine->handler (machine, machine->dev);
 }
 
@@ -235,7 +338,10 @@ fpi_ssm_start_subsm (FpiSsm *parent, FpiSsm *child)
 {
   BUG_ON (parent->timeout);
   child->parentsm = parent;
-  g_clear_pointer (&parent->timeout, g_source_destroy);
+
+  fpi_ssm_clear_delayed_action (parent);
+  fpi_ssm_clear_delayed_action (child);
+
   fpi_ssm_start (child, __subsm_complete);
 }
 
@@ -250,15 +356,18 @@ void
 fpi_ssm_mark_completed (FpiSsm *machine)
 {
   BUG_ON (machine->completed);
-  BUG_ON (machine->timeout);
+  BUG_ON (machine->timeout != NULL);
 
-  g_clear_pointer (&machine->timeout, g_source_destroy);
+  fpi_ssm_clear_delayed_action (machine);
+
   machine->completed = TRUE;
 
   if (machine->error)
-    fp_dbg ("%p completed with error: %s", machine, machine->error->message);
+    fp_dbg ("[%s] %s completed with error: %s", fp_device_get_driver (machine->dev),
+            machine->name, machine->error->message);
   else
-    fp_dbg ("%p completed successfully", machine);
+    fp_dbg ("[%s] %s completed successfully", fp_device_get_driver (machine->dev),
+            machine->name);
   if (machine->callback)
     {
       GError *error = machine->error ? g_error_copy (machine->error) : NULL;
@@ -268,10 +377,50 @@ fpi_ssm_mark_completed (FpiSsm *machine)
   fpi_ssm_free (machine);
 }
 
+static void
+on_device_timeout_complete (FpDevice *dev,
+                            gpointer  user_data)
+{
+  FpiSsm *machine = user_data;
+
+  machine->timeout = NULL;
+  fpi_ssm_mark_completed (machine);
+}
+
+/**
+ * fpi_ssm_mark_completed_delayed:
+ * @machine: an #FpiSsm state machine
+ * @delay: the milliseconds to wait before switching to the next state
+ * @cancellable: (nullable): a #GCancellable to cancel the delayed operation
+ *
+ * Mark a ssm as completed successfully with a delay of @delay ms.
+ * The callback set when creating the state machine with fpi_ssm_new () will be
+ * called when the timeout is over.
+ * The request can be cancelled passing a #GCancellable as @cancellable.
+ */
+void
+fpi_ssm_mark_completed_delayed (FpiSsm       *machine,
+                                int           delay,
+                                GCancellable *cancellable)
+{
+  g_autofree char *source_name = NULL;
+
+  g_return_if_fail (machine != NULL);
+
+  fpi_ssm_set_delayed_action_timeout (machine, delay,
+                                      on_device_timeout_complete, cancellable,
+                                      machine, NULL);
+
+  source_name = g_strdup_printf ("[%s] ssm %s complete %d",
+                                 fp_device_get_device_id (machine->dev),
+                                 machine->name, machine->cur_state + 1);
+  g_source_set_name (machine->timeout, source_name);
+}
+
 /**
  * fpi_ssm_mark_failed:
  * @machine: an #FpiSsm state machine
- * @error: a #GError
+ * @error: (transfer full): a #GError
  *
  * Mark a state machine as failed with @error as the error code, completing it.
  */
@@ -281,13 +430,16 @@ fpi_ssm_mark_failed (FpiSsm *machine, GError *error)
   g_assert (error);
   if (machine->error)
     {
-      fp_warn ("SSM already has an error set, ignoring new error %s", error->message);
+      fp_warn ("[%s] SSM %s already has an error set, ignoring new error %s",
+               fp_device_get_driver (machine->dev), machine->name, error->message);
       g_error_free (error);
       return;
     }
 
-  fp_dbg ("SSM failed in state %d with error: %s", machine->cur_state, error->message);
-  machine->error = error;
+  fp_dbg ("[%s] SSM %s failed in state %d with error: %s",
+          fp_device_get_driver (machine->dev), machine->name,
+          machine->cur_state, error->message);
+  machine->error = g_steal_pointer (&error);
   fpi_ssm_mark_completed (machine);
 }
 
@@ -305,6 +457,10 @@ fpi_ssm_next_state (FpiSsm *machine)
   g_return_if_fail (machine != NULL);
 
   BUG_ON (machine->completed);
+  BUG_ON (machine->timeout != NULL);
+
+  fpi_ssm_clear_delayed_action (machine);
+
   machine->cur_state++;
   if (machine->cur_state == machine->nr_states)
     fpi_ssm_mark_completed (machine);
@@ -312,13 +468,17 @@ fpi_ssm_next_state (FpiSsm *machine)
     __ssm_call_handler (machine);
 }
 
-void fpi_ssm_cancel_delayed_state_change (FpiSsm *machine)
+void
+fpi_ssm_cancel_delayed_state_change (FpiSsm *machine)
 {
   g_return_if_fail (machine);
   BUG_ON (machine->completed);
-  BUG_ON (machine->timeout != NULL);
+  BUG_ON (machine->timeout == NULL);
 
-  g_clear_pointer (&machine->timeout, g_source_destroy);
+  fp_dbg ("[%s] %s cancelled delayed state change",
+          fp_device_get_driver (machine->dev), machine->name);
+
+  fpi_ssm_clear_delayed_action (machine);
 }
 
 static void
@@ -335,28 +495,30 @@ on_device_timeout_next_state (FpDevice *dev,
  * fpi_ssm_next_state_delayed:
  * @machine: an #FpiSsm state machine
  * @delay: the milliseconds to wait before switching to the next state
+ * @cancellable: (nullable): a #GCancellable to cancel the delayed operation
  *
  * Iterate to next state of a state machine with a delay of @delay ms. If the
  * current state is the last state, then the state machine will be marked as
  * completed, as if calling fpi_ssm_mark_completed().
+ * Passing a valid #GCancellable will cause the action to be cancelled when
+ * @cancellable is.
  */
 void
-fpi_ssm_next_state_delayed (FpiSsm *machine,
-                            int     delay)
+fpi_ssm_next_state_delayed (FpiSsm       *machine,
+                            int           delay,
+                            GCancellable *cancellable)
 {
   g_autofree char *source_name = NULL;
 
   g_return_if_fail (machine != NULL);
-  BUG_ON (machine->completed);
 
-  g_clear_pointer (&machine->timeout, g_source_destroy);
-  machine->timeout = fpi_device_add_timeout (machine->dev, delay,
-                                             on_device_timeout_next_state,
-                                             machine);
+  fpi_ssm_set_delayed_action_timeout (machine, delay,
+                                      on_device_timeout_next_state, cancellable,
+                                      machine, NULL);
 
-  source_name = g_strdup_printf ("[%s] ssm %p jump to next state %d",
+  source_name = g_strdup_printf ("[%s] ssm %s jump to next state %d",
                                  fp_device_get_device_id (machine->dev),
-                                 machine, machine->cur_state + 1);
+                                 machine->name, machine->cur_state + 1);
   g_source_set_name (machine->timeout, source_name);
 }
 
@@ -374,13 +536,16 @@ fpi_ssm_jump_to_state (FpiSsm *machine, int state)
 {
   BUG_ON (machine->completed);
   BUG_ON (state < 0 || state >= machine->nr_states);
+  BUG_ON (machine->timeout != NULL);
 
-  g_clear_pointer (&machine->timeout, g_source_destroy);
+  fpi_ssm_clear_delayed_action (machine);
+
   machine->cur_state = state;
   __ssm_call_handler (machine);
 }
 
-typedef struct {
+typedef struct
+{
   FpiSsm *machine;
   int     next_state;
 } FpiSsmJumpToStateDelayedData;
@@ -400,33 +565,36 @@ on_device_timeout_jump_to_state (FpDevice *dev,
  * @machine: an #FpiSsm state machine
  * @state: the state to jump to
  * @delay: the milliseconds to wait before switching to @state state
+ * @cancellable: (nullable): a #GCancellable to cancel the delayed operation
  *
  * Jump to the @state state with a delay of @delay milliseconds, bypassing
  * intermediary states.
+ * Passing a valid #GCancellable will cause the action to be cancelled when
+ * @cancellable is.
  */
 void
-fpi_ssm_jump_to_state_delayed (FpiSsm *machine,
-                               int     state,
-                               int     delay)
+fpi_ssm_jump_to_state_delayed (FpiSsm       *machine,
+                               int           state,
+                               int           delay,
+                               GCancellable *cancellable)
 {
   FpiSsmJumpToStateDelayedData *data;
   g_autofree char *source_name = NULL;
 
   g_return_if_fail (machine != NULL);
-  BUG_ON (machine->completed);
+  BUG_ON (state < 0 || state >= machine->nr_states);
 
   data = g_new0 (FpiSsmJumpToStateDelayedData, 1);
   data->machine = machine;
   data->next_state = state;
 
-  g_clear_pointer (&machine->timeout, g_source_destroy);
-  machine->timeout = fpi_device_add_timeout_full (machine->dev, delay,
-                                                  on_device_timeout_jump_to_state,
-                                                  data, g_free);
+  fpi_ssm_set_delayed_action_timeout (machine, delay,
+                                      on_device_timeout_jump_to_state,
+                                      cancellable, data, g_free);
 
-  source_name = g_strdup_printf ("[%s] ssm %p jump to state %d",
+  source_name = g_strdup_printf ("[%s] ssm %s jump to state %d",
                                  fp_device_get_device_id (machine->dev),
-                                 machine, state);
+                                 machine->name, state);
   g_source_set_name (machine->timeout, source_name);
 }
 
@@ -474,28 +642,6 @@ fpi_ssm_dup_error (FpiSsm *machine)
     return g_error_copy (machine->error);
 
   return NULL;
-}
-
-/**
- * fpi_ssm_next_state_timeout_cb:
- * @dev: a struct #fp_dev
- * @data: a pointer to an #FpiSsm state machine
- *
- * Same as fpi_ssm_next_state(), but to be used as a callback
- * for an fpi_device_add_timeout() callback, when the state
- * change needs to happen after a timeout.
- *
- * Make sure to pass the #FpiSsm as the `ssm_data` argument
- * for that fpi_device_add_timeout() call.
- */
-void
-fpi_ssm_next_state_timeout_cb (FpDevice *dev,
-                               void     *data)
-{
-  g_return_if_fail (dev != NULL);
-  g_return_if_fail (data != NULL);
-
-  fpi_ssm_next_state (data);
 }
 
 /**

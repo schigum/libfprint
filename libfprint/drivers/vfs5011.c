@@ -190,11 +190,13 @@ usbexchange_loop (FpiSsm *ssm, FpDevice *_dev)
 
 static void
 usb_exchange_async (FpiSsm                  *ssm,
-                    struct usbexchange_data *data)
+                    struct usbexchange_data *data,
+                    const char              *exchange_name)
 {
-  FpiSsm *subsm = fpi_ssm_new (FP_DEVICE (data->device),
-                               usbexchange_loop,
-                               data->stepcount);
+  FpiSsm *subsm = fpi_ssm_new_full (FP_DEVICE (data->device),
+                                    usbexchange_loop,
+                                    data->stepcount,
+                                    exchange_name);
 
   fpi_ssm_set_data (subsm, data, NULL);
   fpi_ssm_start_subsm (ssm, subsm);
@@ -210,8 +212,8 @@ vfs5011_get_deviation2 (struct fpi_line_asmbl_ctx *ctx, GSList *row1, GSList *ro
   int res = 0, mean = 0, i;
   const int size = 64;
 
-  buf1 = row1->data + 56;
-  buf2 = row2->data + 168;
+  buf1 = (unsigned char *) row1->data + 56;
+  buf2 = (unsigned char *) row2->data + 168;
 
   for (i = 0; i < size; i++)
     mean += (int) buf1[i] + (int) buf2[i];
@@ -232,7 +234,7 @@ vfs5011_get_pixel (struct fpi_line_asmbl_ctx *ctx,
                    GSList                    *row,
                    unsigned                   x)
 {
-  unsigned char *data = row->data + 8;
+  unsigned char *data = (unsigned char *) row->data + 8;
 
   return data[x];
 }
@@ -684,7 +686,7 @@ activate_loop (FpiSsm *ssm, FpDevice *_dev)
         self->init_sequence.receive_buf =
           g_malloc0 (VFS5011_RECEIVE_BUF_SIZE);
       self->init_sequence.timeout = 1000;
-      usb_exchange_async (ssm, &self->init_sequence);
+      usb_exchange_async (ssm, &self->init_sequence, "ACTIVATE REQUEST");
       break;
 
     case DEV_ACTIVATE_INIT_COMPLETE:
@@ -704,10 +706,7 @@ activate_loop (FpiSsm *ssm, FpDevice *_dev)
       break;
 
     case DEV_ACTIVATE_DATA_COMPLETE:
-      fpi_device_add_timeout (_dev, 1,
-                              fpi_ssm_next_state_timeout_cb,
-                              ssm);
-
+      fpi_ssm_next_state_delayed (ssm, 1, NULL);
       break;
 
     case DEV_ACTIVATE_PREPARE_NEXT_CAPTURE:
@@ -719,7 +718,7 @@ activate_loop (FpiSsm *ssm, FpDevice *_dev)
         self->init_sequence.receive_buf =
           g_malloc0 (VFS5011_RECEIVE_BUF_SIZE);
       self->init_sequence.timeout = VFS5011_DEFAULT_WAIT_TIMEOUT;
-      usb_exchange_async (ssm, &self->init_sequence);
+      usb_exchange_async (ssm, &self->init_sequence, "PREPARE CAPTURE");
       break;
 
     }
@@ -772,7 +771,7 @@ open_loop (FpiSsm *ssm, FpDevice *_dev)
       self->init_sequence.receive_buf =
         g_malloc0 (VFS5011_RECEIVE_BUF_SIZE);
       self->init_sequence.timeout = VFS5011_DEFAULT_WAIT_TIMEOUT;
-      usb_exchange_async (ssm, &self->init_sequence);
+      usb_exchange_async (ssm, &self->init_sequence, "DEVICE OPEN");
       break;
     }
   ;

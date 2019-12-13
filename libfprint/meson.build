@@ -4,7 +4,14 @@ libfprint_sources = [
     'fp-image.c',
     'fp-print.c',
     'fp-image-device.c',
+]
+
+libfprint_private_sources = [
     'fpi-assembling.c',
+    'fpi-device.c',
+    'fpi-image.c',
+    'fpi-image-device.c',
+    'fpi-print.c',
     'fpi-ssm.c',
     'fpi-usb-transfer.c',
     'fpi-byte-reader.c',
@@ -175,45 +182,81 @@ fpi_enums = gnome.mkenums_simple('fpi-enums',
 fpi_enums_h = fpi_enums[1]
 
 drivers_sources += configure_file(input: 'empty_file',
-    output: 'fp-drivers.c',
+    output: 'fpi-drivers.c',
     capture: true,
     command: [
         'echo',
-        drivers_type_list + '\n\n' + drivers_type_func
+        '\n'.join(drivers_type_list + [] + drivers_type_func)
     ])
 
-mapfile = 'libfprint.ver'
-vflag = '-Wl,--version-script,@0@/@1@'.format(meson.current_source_dir(), mapfile)
-
 deps = [ mathlib_dep, glib_dep, gusb_dep, nss_dep, imaging_dep, gio_dep ]
+
+deps += declare_dependency(include_directories: [
+    root_inc,
+    include_directories('nbis/include'),
+    include_directories('nbis/libfprint-include'),
+])
+
+libnbis = static_library('nbis',
+    nbis_sources,
+    dependencies: deps,
+    c_args: cc.get_supported_arguments([
+        '-Wno-error=redundant-decls',
+        '-Wno-redundant-decls',
+        '-Wno-discarded-qualifiers',
+    ]),
+    install: false)
+
+libfprint_private = static_library('fprint-private',
+    sources: libfprint_private_sources + fpi_enums,
+    dependencies: deps,
+    link_with: libnbis,
+    install: false)
+
+libfprint_drivers = static_library('fprint-drivers',
+    sources: drivers_sources + [ fp_enums_h ],
+    c_args: drivers_cflags,
+    dependencies: deps,
+    link_with: libfprint_private,
+    install: false)
+
+mapfile = files('libfprint.ver')
+vflag = '-Wl,--version-script,@0@/@1@'.format(meson.source_root(), mapfile[0])
+
 libfprint = library('fprint',
-    libfprint_sources + fp_enums + fpi_enums +
-        drivers_sources + nbis_sources + other_sources,
+    sources: libfprint_sources + fp_enums + other_sources,
     soversion: soversion,
     version: libversion,
-    c_args: common_cflags + drivers_cflags,
-    include_directories: [
-        root_inc,
-        include_directories('nbis/include'),
-    ],
     link_args : vflag,
     link_depends : mapfile,
+    link_with: [libfprint_private, libfprint_drivers],
     dependencies: deps,
     install: true)
 
 libfprint_dep = declare_dependency(link_with: libfprint,
     sources: [ fp_enums_h ],
     include_directories: root_inc,
-    dependencies: [ glib_dep, gusb_dep, gio_dep ])
+    dependencies: [
+        gio_dep,
+        glib_dep,
+        gusb_dep,
+    ])
 
 install_headers(['fprint.h'] + libfprint_public_headers, subdir: 'libfprint')
 
+libfprint_private_dep = declare_dependency(
+    include_directories: include_directories('.'),
+    link_with: libfprint_private,
+    dependencies: [
+        deps,
+        libfprint_dep,
+    ]
+)
+
 udev_rules = executable('fprint-list-udev-rules',
     'fprint-list-udev-rules.c',
-    include_directories: [
-        root_inc,
-    ],
-    dependencies: [ deps, libfprint_dep ],
+    dependencies: libfprint_private_dep,
+    link_with: libfprint_drivers,
     install: false)
 
 if get_option('udev_rules')
@@ -227,10 +270,8 @@ endif
 
 supported_devices = executable('fprint-list-supported-devices',
     'fprint-list-supported-devices.c',
-    include_directories: [
-        root_inc,
-    ],
-    dependencies: [ deps, libfprint_dep ],
+    dependencies: libfprint_private_dep,
+    link_with: libfprint_drivers,
     install: false)
 
 

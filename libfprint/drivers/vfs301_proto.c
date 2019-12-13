@@ -67,7 +67,8 @@ static void
 usb_recv (FpDeviceVfs301 *dev, guint8 endpoint, int max_bytes, FpiUsbTransfer **out, GError **error)
 {
   GError *err = NULL;
-  FpiUsbTransfer *transfer;
+
+  g_autoptr(FpiUsbTransfer) transfer = NULL;
 
   /* XXX: This function swallows any transfer errors, that is obviously
    *      quite bad (it used to assert on no-error)! */
@@ -77,7 +78,6 @@ usb_recv (FpDeviceVfs301 *dev, guint8 endpoint, int max_bytes, FpiUsbTransfer **
   fpi_usb_transfer_fill_bulk (transfer, endpoint, max_bytes);
 
   fpi_usb_transfer_submit_sync (transfer, VFS301_DEFAULT_WAIT_TIMEOUT, &err);
-
 
 #ifdef DEBUG
   usb_print_packet (0, err, transfer->buffer, transfer->actual_length);
@@ -97,7 +97,8 @@ static void
 usb_send (FpDeviceVfs301 *dev, const guint8 *data, gssize length, GError **error)
 {
   GError *err = NULL;
-  FpiUsbTransfer *transfer = NULL;
+
+  g_autoptr(FpiUsbTransfer) transfer = NULL;
 
   /* XXX: This function swallows any transfer errors, that is obviously
    *      quite bad (it used to assert on no-error)! */
@@ -498,7 +499,7 @@ vfs301_proto_peek_event (FpDeviceVfs301 *dev)
     usb_recv (dev, e1, l1, NULL, &error); \
     usb_recv (dev, e2, l2, NULL, NULL); \
     if (g_error_matches (error, G_USB_DEVICE_ERROR, G_USB_DEVICE_ERROR_TIMED_OUT)) \
-    usb_recv(dev, e1, l1, NULL, NULL); \
+    usb_recv (dev, e1, l1, NULL, NULL); \
   }
 
 static void

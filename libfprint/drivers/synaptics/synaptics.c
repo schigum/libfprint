@@ -168,7 +168,7 @@ cmd_recieve_cb (FpiUsbTransfer *transfer,
    * depending on resp.complete. */
   if (self->cmd_pending_transfer)
     fpi_ssm_jump_to_state (transfer->ssm, SYNAPTICS_CMD_SEND_PENDING);
-  else if (!resp.complete)
+  else if (!resp.complete || self->cmd_complete_on_removal)
     fpi_ssm_next_state (transfer->ssm);             /* SYNAPTICS_CMD_WAIT_INTERRUPT */
   else
     fpi_ssm_mark_completed (transfer->ssm);
@@ -407,7 +407,7 @@ static gboolean
 parse_print_data (GVariant      *data,
                   guint8        *finger,
                   const guint8 **user_id,
-                  gssize        *user_id_len)
+                  gsize         *user_id_len)
 {
   g_autoptr(GVariant) user_id_var = NULL;
 
@@ -506,7 +506,7 @@ list_msg_cb (FpiDeviceSynaptics *self,
                    get_enroll_templates_resp->templates[n].user_id,
                    get_enroll_templates_resp->templates[n].finger_id);
 
-          userid = get_enroll_templates_resp->templates[n].user_id;
+          userid = (gchar *) get_enroll_templates_resp->templates[n].user_id;
 
           print = fp_print_new (FP_DEVICE (self));
           uid = g_variant_new_fixed_array (G_VARIANT_TYPE_BYTE,
@@ -950,7 +950,8 @@ dev_probe (FpDevice *device)
 {
   FpiDeviceSynaptics *self = FPI_DEVICE_SYNAPTICS (device);
   GUsbDevice *usb_dev;
-  FpiUsbTransfer *transfer;
+
+  g_autoptr(FpiUsbTransfer) transfer = NULL;
   FpiByteReader reader;
   GError *error = NULL;
   guint16 status;
@@ -969,10 +970,7 @@ dev_probe (FpDevice *device)
     }
 
   if (!g_usb_device_reset (fpi_device_get_usb_device (device), &error))
-    {
-      fpi_device_probe_complete (device, NULL, NULL, error);
-      return;
-    }
+    goto err_close;
 
   if (!g_usb_device_claim_interface (fpi_device_get_usb_device (device), 0, 0, &error))
     goto err_close;
@@ -985,7 +983,7 @@ dev_probe (FpDevice *device)
   if (!fpi_usb_transfer_submit_sync (transfer, 1000, &error))
     goto err_close;
 
-
+  g_clear_pointer (&transfer, fpi_usb_transfer_unref);
   transfer = fpi_usb_transfer_new (device);
   fpi_usb_transfer_fill_bulk (transfer, USB_EP_REPLY, 40);
   if (!fpi_usb_transfer_submit_sync (transfer, 1000, &error))

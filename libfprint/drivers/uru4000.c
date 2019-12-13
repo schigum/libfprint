@@ -175,7 +175,7 @@ write_regs (FpImageDevice *dev, uint16_t first_reg,
   transfer->short_is_error = TRUE;
   fpi_usb_transfer_fill_control (transfer,
                                  G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
-                                 G_USB_DEVICE_REQUEST_TYPE_STANDARD,
+                                 G_USB_DEVICE_REQUEST_TYPE_VENDOR,
                                  G_USB_DEVICE_RECIPIENT_DEVICE,
                                  USB_RQ, first_reg, 0,
                                  num_regs);
@@ -202,7 +202,7 @@ read_regs (FpImageDevice *dev, uint16_t first_reg,
 
   fpi_usb_transfer_fill_control (transfer,
                                  G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST,
-                                 G_USB_DEVICE_REQUEST_TYPE_STANDARD,
+                                 G_USB_DEVICE_REQUEST_TYPE_VENDOR,
                                  G_USB_DEVICE_RECIPIENT_DEVICE,
                                  USB_RQ, first_reg, 0, num_regs);
   fpi_usb_transfer_submit (transfer, CTRL_TIMEOUT, NULL, callback, user_data);
@@ -332,6 +332,8 @@ irq_handler (FpiUsbTransfer *transfer,
       return;
     }
 
+  start_irq_handler (imgdev);
+
   type = GUINT16_FROM_BE (*((uint16_t *) data));
   fp_dbg ("recv irq type %04x", type);
 
@@ -344,8 +346,6 @@ irq_handler (FpiUsbTransfer *transfer,
     urudev->irq_cb (imgdev, NULL, type, urudev->irq_cb_data);
   else
     fp_dbg ("ignoring interrupt");
-
-  start_irq_handler (imgdev);
 }
 
 static void
@@ -830,26 +830,6 @@ enum rebootpwr_states {
 };
 
 static void
-rebootpwr_pause_cb (FpDevice *dev,
-                    void     *data)
-{
-  FpiSsm *ssm = data;
-  FpiDeviceUru4000 *self = FPI_DEVICE_URU4000 (dev);
-
-  if (!--self->rebootpwr_ctr)
-    {
-      fp_err ("could not reboot device power");
-      fpi_ssm_mark_failed (ssm,
-                           fpi_device_error_new_msg (FP_DEVICE_ERROR,
-                                                     "Could not reboot device"));
-    }
-  else
-    {
-      fpi_ssm_jump_to_state (ssm, REBOOTPWR_GET_HWSTAT);
-    }
-}
-
-static void
 rebootpwr_run_state (FpiSsm *ssm, FpDevice *_dev)
 {
   FpImageDevice *dev = FP_IMAGE_DEVICE (_dev);
@@ -875,7 +855,17 @@ rebootpwr_run_state (FpiSsm *ssm, FpDevice *_dev)
       break;
 
     case REBOOTPWR_PAUSE:
-      fpi_device_add_timeout (_dev, 10, rebootpwr_pause_cb, ssm);
+      if (!--self->rebootpwr_ctr)
+        {
+          fp_err ("could not reboot device power");
+          fpi_ssm_mark_failed (ssm,
+                               fpi_device_error_new_msg (FP_DEVICE_ERROR,
+                                                         "Could not reboot device"));
+        }
+      else
+        {
+          fpi_ssm_jump_to_state_delayed (ssm, 10, REBOOTPWR_GET_HWSTAT, NULL);
+        }
       break;
     }
 }
@@ -917,30 +907,6 @@ enum powerup_states {
 };
 
 static void
-powerup_pause_cb (FpDevice *dev,
-                  void     *data)
-{
-  FpiSsm *ssm = data;
-  FpiDeviceUru4000 *self = FPI_DEVICE_URU4000 (dev);
-
-  if (!--self->powerup_ctr)
-    {
-      fp_err ("could not power device up");
-      fpi_ssm_mark_failed (ssm,
-                           fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
-                                                     "could not power device up"));
-    }
-  else if (!self->profile->auth_cr)
-    {
-      fpi_ssm_jump_to_state (ssm, POWERUP_SET_HWSTAT);
-    }
-  else
-    {
-      fpi_ssm_next_state (ssm);
-    }
-}
-
-static void
 powerup_run_state (FpiSsm *ssm, FpDevice *_dev)
 {
   FpImageDevice *dev = FP_IMAGE_DEVICE (_dev);
@@ -971,7 +937,21 @@ powerup_run_state (FpiSsm *ssm, FpDevice *_dev)
       break;
 
     case POWERUP_PAUSE:
-      fpi_device_add_timeout (_dev, 10, powerup_pause_cb, ssm);
+      if (!--self->powerup_ctr)
+        {
+          fp_err ("could not power device up");
+          fpi_ssm_mark_failed (ssm,
+                               fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+                                                         "could not power device up"));
+        }
+      else if (!self->profile->auth_cr)
+        {
+          fpi_ssm_jump_to_state_delayed (ssm, POWERUP_SET_HWSTAT, 10, NULL);
+        }
+      else
+        {
+          fpi_ssm_next_state_delayed (ssm, 10, NULL);
+        }
       break;
 
     case POWERUP_CHALLENGE_RESPONSE:
@@ -1130,7 +1110,7 @@ init_run_state (FpiSsm *ssm, FpDevice *_dev)
       self->scanpwr_irq_timeout = fpi_device_add_timeout (_dev,
                                                           300,
                                                           init_scanpwr_timeout,
-                                                          ssm);
+                                                          ssm, NULL);
       break;
 
     case INIT_DONE:
