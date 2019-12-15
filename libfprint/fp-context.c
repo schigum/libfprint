@@ -57,24 +57,30 @@ enum {
 };
 static guint signals[LAST_SIGNAL] = { 0 };
 
+static const char *
+get_drivers_whitelist_env (void)
+{
+  return g_getenv ("FP_DRIVERS_WHITELIST");
+}
+
 static gboolean
 is_driver_allowed (const gchar *driver)
 {
-  g_auto(GStrv) allowed_drivers = NULL;
-  const char *fp_allowed_drivers_env;
+  g_auto(GStrv) whitelisted_drivers = NULL;
+  const char *fp_drivers_whitelist_env;
   int i;
 
   g_return_val_if_fail (driver, TRUE);
 
-  fp_allowed_drivers_env = g_getenv ("FP_DRIVERS_WHITELIST");
+  fp_drivers_whitelist_env = get_drivers_whitelist_env ();
 
-  if (!fp_allowed_drivers_env)
+  if (!fp_drivers_whitelist_env)
     return TRUE;
 
-  allowed_drivers = g_strsplit (fp_allowed_drivers_env, ":", -1);
+  whitelisted_drivers = g_strsplit (fp_drivers_whitelist_env, ":", -1);
 
-  for (i = 0; allowed_drivers && allowed_drivers[i]; ++i)
-    if (g_strcmp0 (driver, allowed_drivers[i]) == 0)
+  for (i = 0; whitelisted_drivers[i]; ++i)
+    if (g_strcmp0 (driver, whitelisted_drivers[i]) == 0)
       return TRUE;
 
   return FALSE;
@@ -130,9 +136,6 @@ usb_device_added_cb (FpContext *self, GUsbDevice *device, GUsbContext *usb_ctx)
       const FpIdEntry *entry;
 
       if (cls->type != FP_DEVICE_TYPE_USB)
-        continue;
-
-      if (!is_driver_allowed (cls->id))
         continue;
 
       for (entry = cls->id_table; entry->pid; entry++)
@@ -264,9 +267,24 @@ fp_context_init (FpContext *self)
 {
   g_autoptr(GError) error = NULL;
   FpContextPrivate *priv = fp_context_get_instance_private (self);
+  guint i;
 
-  priv->drivers = g_array_new (TRUE, FALSE, sizeof (GType));
-  fpi_get_driver_types (priv->drivers);
+  priv->drivers = fpi_get_driver_types ();
+
+  if (get_drivers_whitelist_env ())
+    {
+      for (i = 0; i < priv->drivers->len;)
+        {
+          GType driver = g_array_index (priv->drivers, GType, i);
+          g_autoptr(GTypeClass) type_class = g_type_class_ref (driver);
+          FpDeviceClass *cls = FP_DEVICE_CLASS (type_class);
+
+          if (!is_driver_allowed (cls->id))
+            g_array_remove_index (priv->drivers, i);
+          else
+            ++i;
+        }
+    }
 
   priv->devices = g_ptr_array_new_with_free_func (g_object_unref);
 
@@ -338,9 +356,6 @@ fp_context_enumerate (FpContext *context)
       const FpIdEntry *entry;
 
       if (cls->type != FP_DEVICE_TYPE_VIRTUAL)
-        continue;
-
-      if (!is_driver_allowed (cls->id))
         continue;
 
       for (entry = cls->id_table; entry->pid; entry++)
