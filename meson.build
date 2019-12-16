@@ -187,6 +187,8 @@ if get_option('gtk-examples')
     endif
 endif
 
+libfprint_conf.set10('HAVE_LIBFPRINT_TOD', get_option('tod'))
+
 configure_file(output: 'config.h', configuration: libfprint_conf)
 
 subdir('libfprint')

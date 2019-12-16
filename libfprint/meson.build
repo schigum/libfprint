@@ -234,6 +234,10 @@ libfprint_private = static_library('fprint-private',
     link_with: libnbis,
     install: false)
 
+if get_option('tod')
+    subdir('tod')
+endif
+
 libfprint_drivers = static_library('fprint-drivers',
     sources: drivers_sources,
     c_args: drivers_cflags,
