@@ -75,13 +75,13 @@ on_verify_completed (FpDevice *dev, GAsyncResult *res, void *user_data)
       return;
     }
 
+  if (print && fp_device_supports_capture (dev) &&
+      print_image_save (print, "verify.pgm"))
+    g_print ("Print image saved as verify.pgm\n");
+
   if (match)
     {
       g_print ("MATCH!\n");
-      if (fp_device_supports_capture (dev) &&
-          print_image_save (print, "verify.pgm"))
-        g_print ("Print image saved as verify.pgm");
-
       verify_data->ret_value = EXIT_SUCCESS;
     }
   else
@@ -92,7 +92,7 @@ on_verify_completed (FpDevice *dev, GAsyncResult *res, void *user_data)
 
   g_print ("Verify again? [Y/n]? ");
   if (fgets (buffer, sizeof (buffer), stdin) &&
-      (buffer[0] == 'Y' || buffer[0] == 'y'))
+      (buffer[0] == 'Y' || buffer[0] == 'y' || buffer[0] == '\n'))
     {
       start_verification (dev, verify_data);
       return;
@@ -165,8 +165,11 @@ on_list_completed (FpDevice *dev, GAsyncResult *res, gpointer user_data)
 static void
 start_verification (FpDevice *dev, VerifyData *verify_data)
 {
-  g_print ("Choose the finger to verify:\n");
-  verify_data->finger = finger_chooser ();
+  if (verify_data->finger == FP_FINGER_UNKNOWN)
+    {
+      g_print ("Choose the finger to verify:\n");
+      verify_data->finger = finger_chooser ();
+    }
 
   if (verify_data->finger == FP_FINGER_UNKNOWN)
     {

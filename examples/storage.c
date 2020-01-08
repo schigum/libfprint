@@ -57,7 +57,7 @@ load_data (void)
 {
   GVariantDict *res;
   GVariant *var;
-  g_autofree gchar *contents = NULL;
+  gchar *contents = NULL;
   gsize length = 0;
 
   if (!g_file_get_contents (STORAGE_FILE, &contents, &length, NULL))
@@ -66,7 +66,12 @@ load_data (void)
       return g_variant_dict_new (NULL);
     }
 
-  var = g_variant_new_from_data (G_VARIANT_TYPE_VARDICT, contents, length, FALSE, NULL, NULL);
+  var = g_variant_new_from_data (G_VARIANT_TYPE_VARDICT,
+                                 contents,
+                                 length,
+                                 FALSE,
+                                 g_free,
+                                 contents);
 
   res = g_variant_dict_new (var);
   g_variant_unref (var);
@@ -129,7 +134,7 @@ print_data_load (FpDevice *dev, FpFinger finger)
 
   g_autoptr(GVariant) val = NULL;
   g_autoptr(GVariantDict) dict = NULL;
-  g_autofree guchar *stored_data = NULL;
+  const guchar *stored_data = NULL;
   gsize stored_len;
 
   dict = load_data ();
@@ -140,7 +145,7 @@ print_data_load (FpDevice *dev, FpFinger finger)
       FpPrint *print;
       g_autoptr(GError) error = NULL;
 
-      stored_data = (guchar *) g_variant_get_fixed_array (val, &stored_len, 1);
+      stored_data = (const guchar *) g_variant_get_fixed_array (val, &stored_len, 1);
       print = fp_print_deserialize (stored_data, stored_len, &error);
 
       if (error)
@@ -213,7 +218,7 @@ save_image_to_pgm (FpImage *img, const char *path)
 gboolean
 print_image_save (FpPrint *print, const char *path)
 {
-  g_autoptr(FpImage) img = NULL;
+  FpImage *img = NULL;
 
   g_return_val_if_fail (FP_IS_PRINT (print), FALSE);
   g_return_val_if_fail (path != NULL, FALSE);
