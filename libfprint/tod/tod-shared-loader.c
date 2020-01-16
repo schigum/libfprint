@@ -79,6 +79,9 @@ fpi_tod_shared_drivers_register (void)
       FpDeviceClass *cls;
       GType driver;
 
+      if (!g_str_has_prefix (basename, "lib"))
+        continue;
+
       if (!g_str_has_suffix (basename, ".so"))
         continue;
 
