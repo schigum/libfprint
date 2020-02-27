@@ -1,7 +1,5 @@
 tod_soversion = 1
-tod_version = '@0@.0'.format(tod_soversion)
-tod_versioned_path = '-'.join(tod_version.split('.'))
-tod_subpath = meson.project_name() / 'tod-@0@'.format(tod_versioned_path)
+tod_subpath = versioned_libname / 'tod-@0@'.format(tod_soversion)
 tod_modules_prefix = get_option('libdir') / tod_subpath
 
 tod_conf = configuration_data()
@@ -29,13 +27,12 @@ foreach source: libfprint_private_sources
     tod_sources += '..' / source
 endforeach
 
-libfprint_tod = library('fprint-tod',
+libfprint_tod = library(versioned_libname.split('lib')[1] + '-tod',
     sources: [
         tod_sources,
     ],
-    soversion: (soversion * 100) + tod_soversion,
+    soversion: tod_soversion,
     include_directories: include_directories('..'),
-    version: '@0@.'.format(soversion) + tod_version,
     link_args: [
         '-Wl,--version-script,@0@/@1@'.format(meson.source_root(), mapfile[0]),
         '-Wl,--unresolved-symbols=ignore-in-object-files'
@@ -54,13 +51,13 @@ deps += declare_dependency(
 
 pkgconfig = import('pkgconfig')
 pkgconfig.generate(libfprint_tod,
-    name: 'libfprint-tod',
-    filebase: 'libfprint@0@-tod-@1@'.format(soversion, tod_versioned_path),
+    name: versioned_libname + '-tod',
+    filebase: '@0@-tod-@1@'.format(versioned_libname, tod_soversion),
     description: 'Private Libfprint Touch Drivers API',
-    version: meson.project_version() + '.@0@'.format(tod_version),
+    version: meson.project_version() + '+tod@0@'.format(tod_soversion),
     subdirs: tod_subpath,
     requires_private: [
-        meson.project_name() + '@0@'.format(soversion),
+        versioned_libname,
     ],
     variables: [
         'tod_driversdir=${libdir}/@0@'.format(tod_subpath)
