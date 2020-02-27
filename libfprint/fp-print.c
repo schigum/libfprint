@@ -21,6 +21,7 @@
 #define FP_COMPONENT "print"
 
 #include "fp-print-private.h"
+#include "fpi-compat.h"
 #include "fpi-log.h"
 
 /**
@@ -752,8 +753,8 @@ fp_print_deserialize (const guchar *data,
   g_autoptr(GVariant) raw_value = NULL;
   g_autoptr(GVariant) value = NULL;
   g_autoptr(GVariant) print_data = NULL;
+  g_autoptr(GDate) date = NULL;
   guchar *aligned_data = NULL;
-  GDate *date = NULL;
   guint8 finger_int8;
   FpFinger finger;
   g_autofree gchar *username = NULL;
@@ -880,8 +881,6 @@ fp_print_deserialize (const guchar *data,
                 "description", description,
                 "enroll_date", date,
                 NULL);
-
-  g_date_free (date);
 
   return g_steal_pointer (&result);
 

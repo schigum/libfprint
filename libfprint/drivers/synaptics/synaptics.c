@@ -279,17 +279,10 @@ cmd_ssm_done (FpiSsm *ssm, FpDevice *dev, GError *error)
   self->cmd_ssm = NULL;
 
   /* Notify about the SSM failure from here instead. */
-  if (error)
-    {
-      callback (self, NULL, error);
-    }
-  else if (self->cmd_complete_on_removal)
-    {
-      callback (self, NULL, self->cmd_complete_error);
-      self->cmd_complete_error = NULL;
-    }
+  if (error || self->cmd_complete_on_removal)
+    callback (self, NULL, error);
+
   self->cmd_complete_on_removal = FALSE;
-  g_clear_pointer (&self->cmd_complete_error, g_error_free);
 }
 
 static void
@@ -527,8 +520,8 @@ list_msg_cb (FpiDeviceSynaptics *self,
               userid[12] == '-' && userid[14] == '-' && userid[23] == '-')
             {
               g_autofree gchar *copy = g_strdup (userid);
+              g_autoptr(GDate) date = NULL;
               gint32 date_ymd;
-              GDate *date = NULL;
               gint32 finger;
               gchar *username;
               /* Try to parse information from the string. */
@@ -543,7 +536,6 @@ list_msg_cb (FpiDeviceSynaptics *self,
                 date = g_date_new ();
 
               fp_print_set_enroll_date (print, date);
-              g_date_free (date);
 
               copy[14] = '\0';
               finger = g_ascii_strtoll (copy + 13, NULL, 16);
@@ -583,6 +575,22 @@ list (FpDevice *device)
 }
 
 static void
+verify_complete_after_finger_removal (FpiDeviceSynaptics *self)
+{
+  FpDevice *device = FP_DEVICE (self);
+
+  if (self->finger_on_sensor)
+    {
+      fp_dbg ("delaying verify report until after finger removal!");
+      self->cmd_complete_on_removal = TRUE;
+    }
+  else
+    {
+      fpi_device_verify_complete (device, NULL);
+    }
+}
+
+static void
 verify_msg_cb (FpiDeviceSynaptics *self,
                bmkt_response_t    *resp,
                GError             *error)
@@ -592,16 +600,13 @@ verify_msg_cb (FpiDeviceSynaptics *self,
 
   if (error)
     {
-      fpi_device_verify_complete (device, FPI_MATCH_ERROR, NULL, error);
+      fpi_device_verify_complete (device, error);
       return;
     }
 
   if (resp == NULL && self->cmd_complete_on_removal)
     {
-      fpi_device_verify_complete (device,
-                                  GPOINTER_TO_INT (self->cmd_complete_data),
-                                  NULL,
-                                  error);
+      fpi_device_verify_complete (device, NULL);
       return;
     }
 
@@ -620,39 +625,40 @@ verify_msg_cb (FpiDeviceSynaptics *self,
       break;
 
     case BMKT_RSP_VERIFY_FAIL:
-      if(resp->result == BMKT_SENSOR_STIMULUS_ERROR)
+      if (resp->result == BMKT_SENSOR_STIMULUS_ERROR)
         {
-          fp_dbg ("delaying retry error until after finger removal!");
-          self->cmd_complete_on_removal = TRUE;
-          self->cmd_complete_data = GINT_TO_POINTER (FPI_MATCH_ERROR);
-          self->cmd_complete_error = fpi_device_retry_new (FP_DEVICE_RETRY_GENERAL);
+          fp_info ("Match error occurred");
+          fpi_device_verify_report (device, FPI_MATCH_ERROR, NULL,
+                                    fpi_device_retry_new (FP_DEVICE_RETRY_GENERAL));
+          verify_complete_after_finger_removal (self);
         }
       else if (resp->result == BMKT_FP_NO_MATCH)
         {
-          fp_dbg ("delaying match failure until after finger removal!");
-          self->cmd_complete_on_removal = TRUE;
-          self->cmd_complete_data = GINT_TO_POINTER (FPI_MATCH_FAIL);
-          self->cmd_complete_error = NULL;
+          fp_info ("Print didn't match");
+          fpi_device_verify_report (device, FPI_MATCH_FAIL, NULL, error);
+          verify_complete_after_finger_removal (self);
         }
-      else if (BMKT_FP_DATABASE_NO_RECORD_EXISTS)
+      else if (resp->result == BMKT_FP_DATABASE_NO_RECORD_EXISTS)
         {
           fp_info ("Print is not in database");
           fpi_device_verify_complete (device,
-                                      FPI_MATCH_ERROR,
-                                      NULL,
                                       fpi_device_error_new (FP_DEVICE_ERROR_DATA_NOT_FOUND));
         }
       else
         {
           fp_warn ("Verify has failed: %d", resp->result);
-          fpi_device_verify_complete (device, FPI_MATCH_FAIL, NULL, NULL);
+          fpi_device_verify_complete (device,
+                                      fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
+                                                                "Unexpected result from device %d",
+                                                                resp->result));
         }
       break;
 
     case BMKT_RSP_VERIFY_OK:
       fp_info ("Verify was successful! for user: %s finger: %d score: %f",
                verify_resp->user_id, verify_resp->finger_id, verify_resp->match_result);
-      fpi_device_verify_complete (device, FPI_MATCH_SUCCESS, NULL, NULL);
+      fpi_device_verify_report (device, FPI_MATCH_SUCCESS, NULL, NULL);
+      fpi_device_verify_complete (device, NULL);
       break;
     }
 }
@@ -675,8 +681,6 @@ verify (FpDevice *device)
   if (!parse_print_data (data, &finger, &user_id, &user_id_len))
     {
       fpi_device_verify_complete (device,
-                                  FPI_MATCH_ERROR,
-                                  NULL,
                                   fpi_device_error_new (FP_DEVICE_ERROR_DATA_INVALID));
       return;
     }

@@ -775,6 +775,7 @@ fp_device_enroll (FpDevice           *device,
   data->print = g_object_ref_sink (template_print);
   data->enroll_progress_cb = progress_cb;
   data->enroll_progress_data = progress_data;
+  data->enroll_progress_destroy = progress_destroy;
 
   // Attach the progress data as task data so that it is destroyed
   g_task_set_task_data (priv->current_task, data, (GDestroyNotify) enroll_data_free);
@@ -808,10 +809,13 @@ fp_device_enroll_finish (FpDevice     *device,
  * @device: a #FpDevice
  * @enrolled_print: a #FpPrint to verify
  * @cancellable: (nullable): a #GCancellable, or %NULL
+ * @match_cb: (nullable) (scope notified): match reporting callback
+ * @match_data: (closure match_cb): user data for @match_cb
+ * @match_destroy: (destroy match_data): Destroy notify for @match_data
  * @callback: the function to call on completion
  * @user_data: the data to pass to @callback
  *
- * Start an asynchronous operation to close the device. The callback will
+ * Start an asynchronous operation to verify a print. The callback will
  * be called once the operation has finished. Retrieve the result with
  * fp_device_verify_finish().
  */
@@ -819,11 +823,15 @@ void
 fp_device_verify (FpDevice           *device,
                   FpPrint            *enrolled_print,
                   GCancellable       *cancellable,
+                  FpMatchCb           match_cb,
+                  gpointer            match_data,
+                  GDestroyNotify      match_destroy,
                   GAsyncReadyCallback callback,
                   gpointer            user_data)
 {
   g_autoptr(GTask) task = NULL;
   FpDevicePrivate *priv = fp_device_get_instance_private (device);
+  FpMatchData *data;
 
   task = g_task_new (device, cancellable, callback, user_data);
   if (g_task_return_error_if_cancelled (task))
@@ -847,9 +855,14 @@ fp_device_verify (FpDevice           *device,
   priv->current_task = g_steal_pointer (&task);
   maybe_cancel_on_cancelled (device, cancellable);
 
-  g_task_set_task_data (priv->current_task,
-                        g_object_ref (enrolled_print),
-                        g_object_unref);
+  data = g_new0 (FpMatchData, 1);
+  data->enrolled_print = g_object_ref (enrolled_print);
+  data->match_cb = match_cb;
+  data->match_data = match_data;
+  data->match_destroy = match_destroy;
+
+  // Attach the match data as task data so that it is destroyed
+  g_task_set_task_data (priv->current_task, data, (GDestroyNotify) match_data_free);
 
   FP_DEVICE_GET_CLASS (device)->verify (device);
 }
@@ -885,7 +898,11 @@ fp_device_verify_finish (FpDevice     *device,
 
   if (print)
     {
-      *print = g_object_get_data (G_OBJECT (result), "print");
+      FpMatchData *data;
+
+      data = g_task_get_task_data (G_TASK (result));
+
+      *print = data->print;
       if (*print)
         g_object_ref (*print);
     }
@@ -901,6 +918,9 @@ fp_device_verify_finish (FpDevice     *device,
  * @device: a #FpDevice
  * @prints: (element-type FpPrint) (transfer none): #GPtrArray of #FpPrint
  * @cancellable: (nullable): a #GCancellable, or %NULL
+ * @match_cb: (nullable) (scope notified): match reporting callback
+ * @match_data: (closure match_cb): user data for @match_cb
+ * @match_destroy: (destroy match_data): Destroy notify for @match_data
  * @callback: the function to call on completion
  * @user_data: the data to pass to @callback
  *
@@ -912,11 +932,15 @@ void
 fp_device_identify (FpDevice           *device,
                     GPtrArray          *prints,
                     GCancellable       *cancellable,
+                    FpMatchCb           match_cb,
+                    gpointer            match_data,
+                    GDestroyNotify      match_destroy,
                     GAsyncReadyCallback callback,
                     gpointer            user_data)
 {
   g_autoptr(GTask) task = NULL;
   FpDevicePrivate *priv = fp_device_get_instance_private (device);
+  FpMatchData *data;
 
   task = g_task_new (device, cancellable, callback, user_data);
   if (g_task_return_error_if_cancelled (task))
@@ -940,9 +964,14 @@ fp_device_identify (FpDevice           *device,
   priv->current_task = g_steal_pointer (&task);
   maybe_cancel_on_cancelled (device, cancellable);
 
-  g_task_set_task_data (priv->current_task,
-                        g_ptr_array_ref (prints),
-                        (GDestroyNotify) g_ptr_array_unref);
+  data = g_new0 (FpMatchData, 1);
+  data->gallery = g_ptr_array_ref (prints);
+  data->match_cb = match_cb;
+  data->match_data = match_data;
+  data->match_destroy = match_destroy;
+
+  // Attach the match data as task data so that it is destroyed
+  g_task_set_task_data (priv->current_task, data, (GDestroyNotify) match_data_free);
 
   FP_DEVICE_GET_CLASS (device)->identify (device);
 }
@@ -973,15 +1002,19 @@ fp_device_identify_finish (FpDevice     *device,
                            FpPrint     **print,
                            GError      **error)
 {
+  FpMatchData *data;
+
+  data = g_task_get_task_data (G_TASK (result));
+
   if (print)
     {
-      *print = g_object_get_data (G_OBJECT (result), "print");
+      *print = data->print;
       if (*print)
         g_object_ref (*print);
     }
   if (match)
     {
-      *match = g_object_get_data (G_OBJECT (result), "match");
+      *match = data->match;
       if (*match)
         g_object_ref (*match);
     }
@@ -1180,6 +1213,14 @@ fp_device_list_prints (FpDevice           *device,
       return;
     }
 
+  if (!fp_device_has_storage (device))
+    {
+      g_task_return_error (task,
+                           fpi_device_error_new_msg (FP_DEVICE_ERROR_NOT_SUPPORTED,
+                                                     "Device has no storage"));
+      return;
+    }
+
   priv->current_action = FPI_DEVICE_ACTION_LIST;
   priv->current_task = g_steal_pointer (&task);
   maybe_cancel_on_cancelled (device, cancellable);
@@ -1308,6 +1349,8 @@ fp_device_enroll_sync (FpDevice        *device,
  * @device: a #FpDevice
  * @enrolled_print: a #FpPrint to verify
  * @cancellable: (nullable): a #GCancellable, or %NULL
+ * @match_cb: (nullable) (scope call): match reporting callback
+ * @match_data: (closure match_cb): user data for @match_cb
  * @match: (out): Whether the user presented the correct finger
  * @print: (out) (transfer full) (nullable): Location to store the scanned print, or %NULL to ignore
  * @error: Return location for errors, or %NULL to ignore
@@ -1320,6 +1363,8 @@ gboolean
 fp_device_verify_sync (FpDevice     *device,
                        FpPrint      *enrolled_print,
                        GCancellable *cancellable,
+                       FpMatchCb     match_cb,
+                       gpointer      match_data,
                        gboolean     *match,
                        FpPrint     **print,
                        GError      **error)
@@ -1331,6 +1376,7 @@ fp_device_verify_sync (FpDevice     *device,
   fp_device_verify (device,
                     enrolled_print,
                     cancellable,
+                    match_cb, match_data, NULL,
                     async_result_ready, &task);
   while (!task)
     g_main_context_iteration (NULL, TRUE);
@@ -1343,6 +1389,8 @@ fp_device_verify_sync (FpDevice     *device,
  * @device: a #FpDevice
  * @prints: (element-type FpPrint) (transfer none): #GPtrArray of #FpPrint
  * @cancellable: (nullable): a #GCancellable, or %NULL
+ * @match_cb: (nullable) (scope call): match reporting callback
+ * @match_data: (closure match_cb): user data for @match_cb
  * @match: (out) (transfer full) (nullable): Location for the matched #FpPrint, or %NULL
  * @print: (out) (transfer full) (nullable): Location for the new #FpPrint, or %NULL
  * @error: Return location for errors, or %NULL to ignore
@@ -1355,6 +1403,8 @@ gboolean
 fp_device_identify_sync (FpDevice     *device,
                          GPtrArray    *prints,
                          GCancellable *cancellable,
+                         FpMatchCb     match_cb,
+                         gpointer      match_data,
                          FpPrint     **match,
                          FpPrint     **print,
                          GError      **error)
@@ -1366,6 +1416,7 @@ fp_device_identify_sync (FpDevice     *device,
   fp_device_identify (device,
                       prints,
                       cancellable,
+                      match_cb, match_data, NULL,
                       async_result_ready, &task);
   while (!task)
     g_main_context_iteration (NULL, TRUE);
