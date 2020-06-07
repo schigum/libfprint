@@ -19,22 +19,29 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#define FP_COMPONENT "example-verify"
+
 #include <stdio.h>
 #include <libfprint/fprint.h>
+#include <glib-unix.h>
 
 #include "storage.h"
 #include "utilities.h"
 
 typedef struct _VerifyData
 {
-  GMainLoop *loop;
-  FpFinger   finger;
-  int        ret_value;
+  GMainLoop    *loop;
+  GCancellable *cancellable;
+  unsigned int  sigint_handler;
+  FpFinger      finger;
+  int           ret_value;
 } VerifyData;
 
 static void
 verify_data_free (VerifyData *verify_data)
 {
+  g_clear_handle_id (&verify_data->sigint_handler, g_source_remove);
+  g_clear_object (&verify_data->cancellable);
   g_main_loop_unref (verify_data->loop);
   g_free (verify_data);
 }
@@ -55,6 +62,19 @@ on_device_closed (FpDevice *dev, GAsyncResult *res, void *user_data)
   g_main_loop_quit (verify_data->loop);
 }
 
+static void
+verify_quit (FpDevice   *dev,
+             VerifyData *verify_data)
+{
+  if (!fp_device_is_open (dev))
+    {
+      g_main_loop_quit (verify_data->loop);
+      return;
+    }
+
+  fp_device_close (dev, NULL, (GAsyncReadyCallback) on_device_closed, verify_data);
+}
+
 static void start_verification (FpDevice   *dev,
                                 VerifyData *verify_data);
 
@@ -71,35 +91,65 @@ on_verify_completed (FpDevice *dev, GAsyncResult *res, void *user_data)
   if (!fp_device_verify_finish (dev, res, &match, &print, &error))
     {
       g_warning ("Failed to verify print: %s", error->message);
-      g_main_loop_quit (verify_data->loop);
-      return;
-    }
-
-  if (match)
-    {
-      g_print ("MATCH!\n");
-      if (fp_device_supports_capture (dev) &&
-          print_image_save (print, "verify.pgm"))
-        g_print ("Print image saved as verify.pgm");
-
-      verify_data->ret_value = EXIT_SUCCESS;
-    }
-  else
-    {
-      g_print ("NO MATCH!\n");
       verify_data->ret_value = EXIT_FAILURE;
+
+      if (error->domain != FP_DEVICE_RETRY)
+        {
+          verify_quit (dev, verify_data);
+          return;
+        }
     }
 
   g_print ("Verify again? [Y/n]? ");
   if (fgets (buffer, sizeof (buffer), stdin) &&
-      (buffer[0] == 'Y' || buffer[0] == 'y'))
+      (buffer[0] == 'Y' || buffer[0] == 'y' || buffer[0] == '\n'))
     {
       start_verification (dev, verify_data);
       return;
     }
 
-  fp_device_close (dev, NULL, (GAsyncReadyCallback) on_device_closed,
-                   verify_data);
+  verify_quit (dev, verify_data);
+}
+
+static void
+on_match_cb (FpDevice *dev, FpPrint *match, FpPrint *print,
+             gpointer user_data, GError *error)
+{
+  VerifyData *verify_data = user_data;
+
+  if (error)
+    {
+      g_warning ("Match report: Finger not matched, retry error reported: %s",
+                 error->message);
+      return;
+    }
+
+  if (print && fp_device_supports_capture (dev) &&
+      print_image_save (print, "verify.pgm"))
+    g_print ("Print image saved as verify.pgm\n");
+
+  if (match)
+    {
+      char date_str[128];
+
+      verify_data->ret_value = EXIT_SUCCESS;
+
+      g_date_strftime (date_str, G_N_ELEMENTS (date_str), "%Y-%m-%d\0",
+                       fp_print_get_enroll_date (match));
+      g_debug ("Match report: device %s matched finger %s successifully "
+               "with print %s, enrolled on date %s by user %s",
+               fp_device_get_name (dev),
+               finger_to_string (fp_print_get_finger (match)),
+               fp_print_get_description (match), date_str,
+               fp_print_get_username (match));
+
+      g_print ("MATCH!\n");
+    }
+  else
+    {
+      g_debug ("Match report: Finger not matched");
+      g_print ("NO MATCH!\n");
+    }
 }
 
 static void
@@ -143,7 +193,7 @@ on_list_completed (FpDevice *dev, GAsyncResult *res, gpointer user_data)
         {
           g_warning ("Did you remember to enroll your %s finger first?",
                      finger_to_string (verify_data->finger));
-          g_main_loop_quit (verify_data->loop);
+          verify_quit (dev, verify_data);
           return;
         }
 
@@ -151,28 +201,32 @@ on_list_completed (FpDevice *dev, GAsyncResult *res, gpointer user_data)
                fp_print_get_description (verify_print));
 
       g_print ("Print loaded. Time to verify!\n");
-      fp_device_verify (dev, verify_print, NULL,
+      fp_device_verify (dev, verify_print, verify_data->cancellable,
+                        on_match_cb, verify_data, NULL,
                         (GAsyncReadyCallback) on_verify_completed,
                         verify_data);
     }
   else
     {
       g_warning ("Loading prints failed with error %s", error->message);
-      g_main_loop_quit (verify_data->loop);
+      verify_quit (dev, verify_data);
     }
 }
 
 static void
 start_verification (FpDevice *dev, VerifyData *verify_data)
 {
-  g_print ("Choose the finger to verify:\n");
-  verify_data->finger = finger_chooser ();
+  if (verify_data->finger == FP_FINGER_UNKNOWN)
+    {
+      g_print ("Choose the finger to verify:\n");
+      verify_data->finger = finger_chooser ();
+    }
 
   if (verify_data->finger == FP_FINGER_UNKNOWN)
     {
       g_warning ("Unknown finger selected");
       verify_data->ret_value = EXIT_FAILURE;
-      g_main_loop_quit (verify_data->loop);
+      verify_quit (dev, verify_data);
       return;
     }
 
@@ -196,12 +250,13 @@ start_verification (FpDevice *dev, VerifyData *verify_data)
           g_warning ("Failed to load fingerprint data");
           g_warning ("Did you remember to enroll your %s finger first?",
                      finger_to_string (verify_data->finger));
-          g_main_loop_quit (verify_data->loop);
+          verify_quit (dev, verify_data);
           return;
         }
 
       g_print ("Print loaded. Time to verify!\n");
-      fp_device_verify (dev, verify_print, NULL,
+      fp_device_verify (dev, verify_print, verify_data->cancellable,
+                        NULL, NULL, NULL,
                         (GAsyncReadyCallback) on_verify_completed,
                         verify_data);
     }
@@ -217,13 +272,23 @@ on_device_opened (FpDevice *dev, GAsyncResult *res, void *user_data)
   if (!fp_device_open_finish (dev, res, &error))
     {
       g_warning ("Failed to open device: %s", error->message);
-      g_main_loop_quit (verify_data->loop);
+      verify_quit (dev, verify_data);
       return;
     }
 
   g_print ("Opened device. ");
 
   start_verification (dev, verify_data);
+}
+
+static gboolean
+sigint_cb (void *user_data)
+{
+  VerifyData *verify_data = user_data;
+
+  g_cancellable_cancel (verify_data->cancellable);
+
+  return G_SOURCE_CONTINUE;
 }
 
 int
@@ -256,8 +321,14 @@ main (void)
   verify_data = g_new0 (VerifyData, 1);
   verify_data->ret_value = EXIT_FAILURE;
   verify_data->loop = g_main_loop_new (NULL, FALSE);
-
-  fp_device_open (dev, NULL, (GAsyncReadyCallback) on_device_opened,
+  verify_data->cancellable = g_cancellable_new ();
+  verify_data->sigint_handler = g_unix_signal_add_full (G_PRIORITY_HIGH,
+                                                        SIGINT,
+                                                        sigint_cb,
+                                                        verify_data,
+                                                        NULL);
+  fp_device_open (dev, verify_data->cancellable,
+                  (GAsyncReadyCallback) on_device_opened,
                   verify_data);
 
   g_main_loop_run (verify_data->loop);

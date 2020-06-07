@@ -81,7 +81,7 @@ static const struct uru4k_dev_profile
 {
   const char *name;
   gboolean    auth_cr;
-  gboolean    encryption;
+  gboolean    image_not_flipped;
 } uru4k_dev_info[] = {
   [MS_KBD] = {
     .name = "Microsoft Keyboard with Fingerprint Reader",
@@ -106,7 +106,7 @@ static const struct uru4k_dev_profile
   [DP_URU4000B] = {
     .name = "Digital Persona U.are.U 4000B",
     .auth_cr = FALSE,
-    .encryption = TRUE,
+    .image_not_flipped = TRUE, /* See comment in the code where it is used. */
   },
 };
 
@@ -122,7 +122,7 @@ struct _FpiDeviceUru4000
 
   const struct uru4k_dev_profile *profile;
   uint8_t                         interface;
-  FpImageDeviceState              activate_state;
+  FpiImageDeviceState             activate_state;
   unsigned char                   last_reg_rd[16];
   unsigned char                   last_hwstat;
 
@@ -408,16 +408,16 @@ change_state_write_reg_cb (FpiUsbTransfer *transfer,
 }
 
 static void
-dev_change_state (FpImageDevice *dev, FpImageDeviceState state)
+dev_change_state (FpImageDevice *dev, FpiImageDeviceState state)
 {
   FpiDeviceUru4000 *self = FPI_DEVICE_URU4000 (dev);
 
   switch (state)
     {
-    case FP_IMAGE_DEVICE_STATE_INACTIVE:
-    case FP_IMAGE_DEVICE_STATE_AWAIT_FINGER_ON:
-    case FP_IMAGE_DEVICE_STATE_AWAIT_FINGER_OFF:
-    case FP_IMAGE_DEVICE_STATE_CAPTURE:
+    case FPI_IMAGE_DEVICE_STATE_INACTIVE:
+    case FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_ON:
+    case FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_OFF:
+    case FPI_IMAGE_DEVICE_STATE_CAPTURE:
       break;
 
     default:
@@ -680,17 +680,17 @@ imaging_run_state (FpiSsm *ssm, FpDevice *_dev)
           fpi_ssm_jump_to_state (ssm, IMAGING_CAPTURE);
           return;
         }
-      if (!self->profile->encryption)
+
+      /* Detect whether image is encrypted (by checking how noisy it is) */
+      dev2 = calc_dev2 (img);
+      fp_dbg ("dev2: %d", dev2);
+      if (dev2 < ENC_THRESHOLD)
         {
-          dev2 = calc_dev2 (img);
-          fp_dbg ("dev2: %d", dev2);
-          if (dev2 < ENC_THRESHOLD)
-            {
-              fpi_ssm_jump_to_state (ssm, IMAGING_REPORT_IMAGE);
-              return;
-            }
-          fp_info ("image seems to be encrypted");
+          fpi_ssm_jump_to_state (ssm, IMAGING_REPORT_IMAGE);
+          return;
         }
+      fp_info ("image seems to be encrypted");
+
       buf[0] = img->key_number;
       buf[1] = self->img_enc_seed;
       buf[2] = self->img_enc_seed >> 8;
@@ -769,11 +769,17 @@ imaging_run_state (FpiSsm *ssm, FpDevice *_dev)
         }
 
       fpimg->flags = FPI_IMAGE_COLORS_INVERTED;
-      if (!self->profile->encryption)
+      /* NOTE: For some reason all but U4000B (or rather U4500?) flipped the
+       * image, we retain this behaviour here, but it is not clear whether it
+       * is correct.
+       * It may be that there are different models with the same USB ID that
+       * behave differently.
+       */
+      if (self->profile->image_not_flipped)
         fpimg->flags |= FPI_IMAGE_V_FLIPPED | FPI_IMAGE_H_FLIPPED;
       fpi_image_device_image_captured (dev, fpimg);
 
-      if (self->activate_state == FP_IMAGE_DEVICE_STATE_CAPTURE)
+      if (self->activate_state == FPI_IMAGE_DEVICE_STATE_CAPTURE)
         fpi_ssm_jump_to_state (ssm, IMAGING_CAPTURE);
       else
         fpi_ssm_mark_completed (ssm);
@@ -1176,7 +1182,7 @@ deactivate_write_reg_cb (FpiUsbTransfer *transfer, FpDevice *dev,
 static void
 dev_deactivate (FpImageDevice *dev)
 {
-  dev_change_state (dev, FP_IMAGE_DEVICE_STATE_INACTIVE);
+  dev_change_state (dev, FPI_IMAGE_DEVICE_STATE_INACTIVE);
 }
 
 static void
@@ -1187,7 +1193,7 @@ execute_state_change (FpImageDevice *dev)
 
   switch (self->activate_state)
     {
-    case FP_IMAGE_DEVICE_STATE_INACTIVE:
+    case FPI_IMAGE_DEVICE_STATE_INACTIVE:
       fp_dbg ("deactivating");
       self->irq_cb = NULL;
       self->irq_cb_data = NULL;
@@ -1195,7 +1201,7 @@ execute_state_change (FpImageDevice *dev)
                  deactivate_write_reg_cb, NULL);
       break;
 
-    case FP_IMAGE_DEVICE_STATE_AWAIT_FINGER_ON:
+    case FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_ON:
       fp_dbg ("wait finger on");
       if (!IRQ_HANDLER_IS_RUNNING (self))
         {
@@ -1209,7 +1215,7 @@ execute_state_change (FpImageDevice *dev)
                  change_state_write_reg_cb, NULL);
       break;
 
-    case FP_IMAGE_DEVICE_STATE_CAPTURE:
+    case FPI_IMAGE_DEVICE_STATE_CAPTURE:
       fp_dbg ("starting capture");
       self->irq_cb = NULL;
 
@@ -1229,7 +1235,7 @@ execute_state_change (FpImageDevice *dev)
                  change_state_write_reg_cb, NULL);
       break;
 
-    case FP_IMAGE_DEVICE_STATE_AWAIT_FINGER_OFF:
+    case FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_OFF:
       fp_dbg ("await finger off");
       if (!IRQ_HANDLER_IS_RUNNING (self))
         {

@@ -17,9 +17,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-
-#ifndef _BMKT_RESPONSE_H_
-#define _BMKT_RESPONSE_H_
+#pragma once
 
 #include "bmkt.h"
 
@@ -318,7 +316,7 @@ typedef struct bmkt_init_resp
  */
 typedef struct bmkt_enroll_resp
 {
-  int     progress;                             /**< Shows current progress stutus [0-100] */
+  int     progress;                             /**< Shows current progress status [0-100] */
   uint8_t finger_id;                            /**< User's finger id [1-10] */
   uint8_t user_id[BMKT_MAX_USER_ID_LEN];        /**< User name to be enrolled */
 } bmkt_enroll_resp_t;
@@ -485,5 +483,3 @@ typedef struct bmkt_response
   int                  complete;        /**< Operation completion status 1: complete / 0: not completed */
   bmkt_response_data_t response;        /**< Operation specific response union */
 } bmkt_response_t;
-
-#endif /* _BMKT_RESPONSE_H_ */

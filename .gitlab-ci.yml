@@ -1,20 +1,22 @@
-variables:
-  FEDORA_TAG: "2019-12-12"
-  FEDORA_VERSION: rawhide
-  FEDORA_IMAGE: "$CI_REGISTRY/libfprint/$CI_PROJECT_NAME/fedora/$FEDORA_VERSION:$FEDORA_TAG"
-  BUNDLE: "org.freedesktop.libfprint.Demo.flatpak"
-  LAST_ABI_BREAK: "056ea541ddc97f5806cffbd99a12dc87e4da3546"
-
 include:
+  - local: '.gitlab-ci/libfprint-templates.yaml'
   - project: 'wayland/ci-templates'
     ref: master
     file: '/templates/fedora.yml'
+
+variables:
+  extends: .libfprint_common_variables
+  FDO_DISTRIBUTION_TAG: latest
+  FDO_DISTRIBUTION_VERSION: rawhide
+  FEDORA_IMAGE: "$CI_REGISTRY/libfprint/$CI_PROJECT_NAME/fedora/$FDO_DISTRIBUTION_VERSION:$FDO_DISTRIBUTION_TAG"
+  BUNDLE: "org.freedesktop.libfprint.Demo.flatpak"
+  LAST_ABI_BREAK: "056ea541ddc97f5806cffbd99a12dc87e4da3546"
 
 stages:
   - check-source
   - build
   - test
-  - flatpack
+  - flatpak
 
 image: "$FEDORA_IMAGE"
 
@@ -46,6 +48,11 @@ build:
   <<: *build_one_driver
   <<: *build
 #  <<: *check_abi
+  artifacts:
+    expose_as: "HTML Documentation"
+    paths:
+    - _build/doc/html/
+    expire_in: 1 week
 
 test:
   stage: test
@@ -57,10 +64,12 @@ test:
     - ninja -C _build
     - meson test -C _build --verbose --no-stdsplit --timeout-multiplier 3
     - ninja -C _build coverage
+    - cat _build/meson-logs/coverage.txt
   artifacts:
     paths:
       - _build/meson-logs
     expire_in: 1 week
+  coverage: '/^TOTAL.*\s+(\d+\%)$/'
 
 test_valgrind:
   stage: test
@@ -72,13 +81,32 @@ test_valgrind:
     - ninja -C _build
     - meson test -C _build --verbose --no-stdsplit --setup=valgrind
 
+test_scan_build:
+  stage: test
+  except:
+    variables:
+      - $CI_PIPELINE_SOURCE == "schedule"
+  allow_failure: true
+  script:
+    - meson -Ddrivers=all . _build
+    # This is ugly, the wrapper disables the malloc checker
+    - SCANBUILD=$CI_PROJECT_DIR/.gitlab-ci/scan-build ninja -C _build scan-build
+    # Check that the directory is empty
+    - "! ls -A _build/meson-logs/scanbuild | grep -q ."
+  artifacts:
+    paths:
+      - _build/meson-logs
+    expire_in: 1 week
+
 test_indent:
   stage: check-source
   except:
     variables:
       - $CI_PIPELINE_SOURCE == "schedule"
   script:
-    - scripts/uncrustify.sh --check
+    - scripts/uncrustify.sh
+    - git diff
+    - "! git status -s | grep -q ."
 
 .flatpak_script_template: &flatpak_script
     script:
@@ -105,10 +133,7 @@ test_indent:
 
 .flatpak_master_template: &flatpak_master
     image: registry.gitlab.gnome.org/gnome/gnome-runtime-images/gnome:3.32
-    stage: flatpack
-    except:
-      variables:
-        - $CI_PIPELINE_SOURCE == "schedule"
+    stage: flatpak
     variables:
         MANIFEST_PATH: "demo/org.freedesktop.libfprint.Demo.json"
         # From demo/org.freedesktop.libfprint.Demo.json
@@ -128,40 +153,19 @@ flatpak-manual master:
     <<: *flatpak_master
     when: manual
     except:
-      - tags
-      - master
+      refs:
+        - tags
+        - master
+      variables:
+        - $CI_PIPELINE_SOURCE == "schedule"
 
 # CONTAINERS creation stage
 container_fedora_build:
-  extends: .fedora@container-build
+  extends: .fdo.container-build@fedora
   only:
     variables:
       - $CI_PIPELINE_SOURCE == "schedule" && $CRON_TASK == "BUILD_CI_IMAGES"
   variables:
     GIT_STRATEGY: none # no need to pull the whole tree for rebuilding the image
     # a list of packages to install
-    FEDORA_RPMS:
-      doxygen
-      flatpak-builder
-      gcc
-      gcc-c++
-      gcovr
-      git
-      glib2-devel
-      glibc-devel
-      gobject-introspection-devel
-      gtk-doc
-      gtk3-devel
-      libabigail
-      libgusb-devel
-      libX11-devel
-      libXv-devel
-      meson
-      nss-devel
-      pixman-devel
-      python3-cairo
-      python3-gobject
-      systemd
-      umockdev
-      uncrustify
-      valgrind
+    FDO_DISTRIBUTION_PACKAGES: $LIBFPRINT_DEPENDENCIES

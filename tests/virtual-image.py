@@ -1,20 +1,25 @@
 #!/usr/bin/env python3
 
-
-import gi
-gi.require_version('FPrint', '2.0')
-from gi.repository import FPrint, GLib, Gio
-
-import os
 import sys
-import unittest
-import socket
-import struct
-import subprocess
-import shutil
-import glob
-import cairo
-import tempfile
+try:
+    import gi
+    import os
+
+    from gi.repository import GLib, Gio
+
+    import unittest
+    import socket
+    import struct
+    import subprocess
+    import shutil
+    import glob
+    import cairo
+    import tempfile
+except Exception as e:
+    print("Missing dependencies: %s" % str(e))
+    sys.exit(77)
+
+FPrint = None
 
 # Re-run the test with the passed wrapper if set
 wrapper = os.getenv('LIBFPRINT_TEST_WRAPPER')
@@ -83,6 +88,8 @@ class VirtualImage(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         shutil.rmtree(cls.tmpdir)
+        del cls.dev
+        del cls.ctx
 
     def setUp(self):
         self.dev.open_sync()
@@ -95,15 +102,15 @@ class VirtualImage(unittest.TestCase):
         del self.con
         self.dev.close_sync()
 
-    def send_retry(self, retry_error=1, iterate=True):
-        # The default (1) is too-short
-        self.sendall(struct.pack('ii', -1, retry_error))
+    def send_retry(self, retry_error=None, iterate=True):
+        retry_error = retry_error if retry_error else FPrint.DeviceRetry.TOO_SHORT
+        self.con.sendall(struct.pack('ii', -1, retry_error))
         while iterate and ctx.pending():
             ctx.iteration(False)
 
-    def send_error(self, device_error=0, iterate=True):
-        # The default (0) is a generic error
-        self.sendall(struct.pack('ii', -1, retry_error))
+    def send_error(self, device_error=None, iterate=True):
+        device_error = device_error if device_error else FPrint.DeviceError.GENERAL
+        self.con.sendall(struct.pack('ii', -2, device_error))
         while iterate and ctx.pending():
             ctx.iteration(False)
 
@@ -210,15 +217,16 @@ class VirtualImage(unittest.TestCase):
         done = False
 
         def verify_cb(dev, res):
-            match, fp = dev.verify_finish(res)
-            self._verify_match = match
-            self._verify_fp = fp
+            try:
+                self._verify_match, self._verify_fp = dev.verify_finish(res)
+            except gi.repository.GLib.Error as e:
+                self._verify_error = e
 
         fp_whorl = self.enroll_print('whorl')
 
         self._verify_match = None
         self._verify_fp = None
-        self.dev.verify(fp_whorl, None, verify_cb)
+        self.dev.verify(fp_whorl, callback=verify_cb)
         self.send_image('whorl')
         while self._verify_match is None:
             ctx.iteration(True)
@@ -226,40 +234,78 @@ class VirtualImage(unittest.TestCase):
 
         self._verify_match = None
         self._verify_fp = None
-        self.dev.verify(fp_whorl, None, verify_cb)
+        self.dev.verify(fp_whorl, callback=verify_cb)
         self.send_image('tented_arch')
         while self._verify_match is None:
             ctx.iteration(True)
         assert(not self._verify_match)
 
+        # Test verify error cases
+        self._verify_fp = None
+        self._verify_error = None
+        self.dev.verify(fp_whorl, callback=verify_cb)
+        self.send_retry()
+        while self._verify_fp is None and self._verify_error is None:
+            ctx.iteration(True)
+        assert(self._verify_error is not None)
+        assert(self._verify_error.matches(FPrint.device_retry_quark(), FPrint.DeviceRetry.TOO_SHORT))
+
+        self._verify_fp = None
+        self._verify_error = None
+        self.dev.verify(fp_whorl, callback=verify_cb)
+        self.send_error()
+        while self._verify_fp is None and self._verify_error is None:
+            ctx.iteration(True)
+        assert(self._verify_error is not None)
+        print(self._verify_error)
+        assert(self._verify_error.matches(FPrint.device_error_quark(), FPrint.DeviceError.GENERAL))
+
     def test_identify(self):
         done = False
-
-        def verify_cb(dev, res):
-            r, fp = dev.verify_finish(res)
-            self._verify_match = r
-            self._verify_fp = fp
 
         fp_whorl = self.enroll_print('whorl')
         fp_tented_arch = self.enroll_print('tented_arch')
 
         def identify_cb(dev, res):
             print('Identify finished')
-            self._identify_match, self._identify_fp = self.dev.identify_finish(res)
+            try:
+                self._identify_match, self._identify_fp = self.dev.identify_finish(res)
+            except gi.repository.GLib.Error as e:
+                print(e)
+                self._identify_error = e
 
         self._identify_fp = None
-        self.dev.identify([fp_whorl, fp_tented_arch], None, identify_cb)
+        self.dev.identify([fp_whorl, fp_tented_arch], callback=identify_cb)
         self.send_image('tented_arch')
         while self._identify_fp is None:
             ctx.iteration(True)
         assert(self._identify_match is fp_tented_arch)
 
         self._identify_fp = None
-        self.dev.identify([fp_whorl, fp_tented_arch], None, identify_cb)
+        self.dev.identify([fp_whorl, fp_tented_arch], callback=identify_cb)
         self.send_image('whorl')
         while self._identify_fp is None:
             ctx.iteration(True)
         assert(self._identify_match is fp_whorl)
+
+        # Test error cases
+        self._identify_fp = None
+        self._identify_error = None
+        self.dev.identify([fp_whorl, fp_tented_arch], callback=identify_cb)
+        self.send_retry()
+        while self._identify_fp is None and self._identify_error is None:
+            ctx.iteration(True)
+        assert(self._identify_error is not None)
+        assert(self._identify_error.matches(FPrint.device_retry_quark(), FPrint.DeviceRetry.TOO_SHORT))
+
+        self._identify_fp = None
+        self._identify_error = None
+        self.dev.identify([fp_whorl, fp_tented_arch], callback=identify_cb)
+        self.send_error()
+        while self._identify_fp is None and self._identify_error is None:
+            ctx.iteration(True)
+        assert(self._identify_error is not None)
+        assert(self._identify_error.matches(FPrint.device_error_quark(), FPrint.DeviceError.GENERAL))
 
     def test_verify_serialized(self):
         done = False
@@ -288,7 +334,7 @@ class VirtualImage(unittest.TestCase):
 
         self._verify_match = None
         self._verify_fp = None
-        self.dev.verify(fp_whorl_new, None, verify_cb)
+        self.dev.verify(fp_whorl_new, callback=verify_cb)
         self.send_image('whorl')
         while self._verify_match is None:
             ctx.iteration(True)
@@ -296,12 +342,19 @@ class VirtualImage(unittest.TestCase):
 
         self._verify_match = None
         self._verify_fp = None
-        self.dev.verify(fp_whorl_new, None, verify_cb)
+        self.dev.verify(fp_whorl_new, callback=verify_cb)
         self.send_image('tented_arch')
         while self._verify_match is None:
             ctx.iteration(True)
         assert(not self._verify_match)
 
-# avoid writing to stderr
-unittest.main(testRunner=unittest.TextTestRunner(stream=sys.stdout, verbosity=2))
+if __name__ == '__main__':
+    try:
+        gi.require_version('FPrint', '2.0')
+        from gi.repository import FPrint
+    except Exception as e:
+        print("Missing dependencies: %s" % str(e))
+        sys.exit(77)
 
+    # avoid writing to stderr
+    unittest.main(testRunner=unittest.TextTestRunner(stream=sys.stdout, verbosity=2))

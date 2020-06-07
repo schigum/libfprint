@@ -28,7 +28,7 @@
  * @title: Internal FpDevice
  * @short_description: Internal device routines
  *
- * The methods that are availabe for drivers to manipulate a device. See
+ * The methods that are available for drivers to manipulate a device. See
  * #FpDeviceClass for more information. Also note that most of these are
  * not relevant for image based devices, see #FpImageDeviceClass in that
  * case.
@@ -100,7 +100,7 @@ fpi_device_error_new (FpDeviceError error)
   switch (error)
     {
     case FP_DEVICE_ERROR_GENERAL:
-      msg = "An unspecified error occured!";
+      msg = "An unspecified error occurred!";
       break;
 
     case FP_DEVICE_ERROR_NOT_SUPPORTED:
@@ -138,7 +138,7 @@ fpi_device_error_new (FpDeviceError error)
     default:
       g_warning ("Unsupported error, returning general error instead!");
       error = FP_DEVICE_ERROR_GENERAL;
-      msg = "An unspecified error occured!";
+      msg = "An unspecified error occurred!";
     }
 
   return g_error_new_literal (FP_DEVICE_ERROR, error, msg);
@@ -350,21 +350,21 @@ fpi_device_get_virtual_env (FpDevice *device)
  * fpi_device_get_current_action:
  * @device: The #FpDevice
  *
- * Get the currently ongoing action or %FP_DEVICE_ACTION_NONE if there
+ * Get the currently ongoing action or %FPI_DEVICE_ACTION_NONE if there
  * is no operation at this time.
  *
  * This is useful for drivers that might share code paths between different
  * actions (e.g. verify and identify) and want to find out again later which
  * action was started in the beginning.
  *
- * Returns: The ongoing #FpDeviceAction
+ * Returns: The ongoing #FpiDeviceAction
  */
-FpDeviceAction
+FpiDeviceAction
 fpi_device_get_current_action (FpDevice *device)
 {
   FpDevicePrivate *priv = fp_device_get_instance_private (device);
 
-  g_return_val_if_fail (FP_IS_DEVICE (device), FP_DEVICE_ACTION_NONE);
+  g_return_val_if_fail (FP_IS_DEVICE (device), FPI_DEVICE_ACTION_NONE);
 
   return priv->current_action;
 }
@@ -387,7 +387,7 @@ fpi_device_action_is_cancelled (FpDevice *device)
   GCancellable *cancellable;
 
   g_return_val_if_fail (FP_IS_DEVICE (device), TRUE);
-  g_return_val_if_fail (priv->current_action != FP_DEVICE_ACTION_NONE, TRUE);
+  g_return_val_if_fail (priv->current_action != FPI_DEVICE_ACTION_NONE, TRUE);
 
   cancellable = g_task_get_cancellable (priv->current_task);
 
@@ -420,6 +420,23 @@ enroll_data_free (FpEnrollData *data)
   g_free (data);
 }
 
+void
+match_data_free (FpMatchData *data)
+{
+  g_clear_object (&data->print);
+  g_clear_object (&data->match);
+  g_clear_error (&data->error);
+
+  if (data->match_destroy)
+    data->match_destroy (data->match_data);
+  data->match_data = NULL;
+
+  g_clear_object (&data->enrolled_print);
+  g_clear_pointer (&data->gallery, g_ptr_array_unref);
+
+  g_free (data);
+}
+
 /**
  * fpi_device_get_enroll_data:
  * @device: The #FpDevice
@@ -435,7 +452,7 @@ fpi_device_get_enroll_data (FpDevice *device,
   FpEnrollData *data;
 
   g_return_if_fail (FP_IS_DEVICE (device));
-  g_return_if_fail (priv->current_action == FP_DEVICE_ACTION_ENROLL);
+  g_return_if_fail (priv->current_action == FPI_DEVICE_ACTION_ENROLL);
 
   data = g_task_get_task_data (priv->current_task);
   g_assert (data);
@@ -458,7 +475,7 @@ fpi_device_get_capture_data (FpDevice *device,
   FpDevicePrivate *priv = fp_device_get_instance_private (device);
 
   g_return_if_fail (FP_IS_DEVICE (device));
-  g_return_if_fail (priv->current_action == FP_DEVICE_ACTION_CAPTURE);
+  g_return_if_fail (priv->current_action == FPI_DEVICE_ACTION_CAPTURE);
 
   if (wait_for_finger)
     *wait_for_finger = priv->wait_for_finger;
@@ -476,12 +493,16 @@ fpi_device_get_verify_data (FpDevice *device,
                             FpPrint **print)
 {
   FpDevicePrivate *priv = fp_device_get_instance_private (device);
+  FpMatchData *data;
 
   g_return_if_fail (FP_IS_DEVICE (device));
-  g_return_if_fail (priv->current_action == FP_DEVICE_ACTION_VERIFY);
+  g_return_if_fail (priv->current_action == FPI_DEVICE_ACTION_VERIFY);
+
+  data = g_task_get_task_data (priv->current_task);
+  g_assert (data);
 
   if (print)
-    *print = g_task_get_task_data (priv->current_task);
+    *print = data->enrolled_print;
 }
 
 /**
@@ -496,12 +517,16 @@ fpi_device_get_identify_data (FpDevice   *device,
                               GPtrArray **prints)
 {
   FpDevicePrivate *priv = fp_device_get_instance_private (device);
+  FpMatchData *data;
 
   g_return_if_fail (FP_IS_DEVICE (device));
-  g_return_if_fail (priv->current_action == FP_DEVICE_ACTION_IDENTIFY);
+  g_return_if_fail (priv->current_action == FPI_DEVICE_ACTION_IDENTIFY);
+
+  data = g_task_get_task_data (priv->current_task);
+  g_assert (data);
 
   if (prints)
-    *prints = g_task_get_task_data (priv->current_task);
+    *prints = data->gallery;
 }
 
 /**
@@ -518,7 +543,7 @@ fpi_device_get_delete_data (FpDevice *device,
   FpDevicePrivate *priv = fp_device_get_instance_private (device);
 
   g_return_if_fail (FP_IS_DEVICE (device));
-  g_return_if_fail (priv->current_action == FP_DEVICE_ACTION_DELETE);
+  g_return_if_fail (priv->current_action == FPI_DEVICE_ACTION_DELETE);
 
   if (print)
     *print = g_task_get_task_data (priv->current_task);
@@ -542,7 +567,7 @@ fpi_device_get_cancellable (FpDevice *device)
   FpDevicePrivate *priv = fp_device_get_instance_private (device);
 
   g_return_val_if_fail (FP_IS_DEVICE (device), NULL);
-  g_return_val_if_fail (priv->current_action != FP_DEVICE_ACTION_NONE, NULL);
+  g_return_val_if_fail (priv->current_action != FPI_DEVICE_ACTION_NONE, NULL);
 
   return g_task_get_cancellable (priv->current_task);
 }
@@ -564,7 +589,7 @@ fpi_device_action_error (FpDevice *device,
   FpDevicePrivate *priv = fp_device_get_instance_private (device);
 
   g_return_if_fail (FP_IS_DEVICE (device));
-  g_return_if_fail (priv->current_action != FP_DEVICE_ACTION_NONE);
+  g_return_if_fail (priv->current_action != FPI_DEVICE_ACTION_NONE);
 
   if (error != NULL)
     {
@@ -579,44 +604,44 @@ fpi_device_action_error (FpDevice *device,
 
   switch (priv->current_action)
     {
-    case FP_DEVICE_ACTION_PROBE:
+    case FPI_DEVICE_ACTION_PROBE:
       fpi_device_probe_complete (device, NULL, NULL, error);
       break;
 
-    case FP_DEVICE_ACTION_OPEN:
+    case FPI_DEVICE_ACTION_OPEN:
       fpi_device_open_complete (device, error);
       break;
 
-    case FP_DEVICE_ACTION_CLOSE:
+    case FPI_DEVICE_ACTION_CLOSE:
       fpi_device_close_complete (device, error);
       break;
 
-    case FP_DEVICE_ACTION_ENROLL:
+    case FPI_DEVICE_ACTION_ENROLL:
       fpi_device_enroll_complete (device, NULL, error);
       break;
 
-    case FP_DEVICE_ACTION_VERIFY:
-      fpi_device_verify_complete (device, FPI_MATCH_ERROR, NULL, error);
+    case FPI_DEVICE_ACTION_VERIFY:
+      fpi_device_verify_complete (device, error);
       break;
 
-    case FP_DEVICE_ACTION_IDENTIFY:
-      fpi_device_identify_complete (device, NULL, NULL, error);
+    case FPI_DEVICE_ACTION_IDENTIFY:
+      fpi_device_identify_complete (device, error);
       break;
 
-    case FP_DEVICE_ACTION_CAPTURE:
+    case FPI_DEVICE_ACTION_CAPTURE:
       fpi_device_capture_complete (device, NULL, error);
       break;
 
-    case FP_DEVICE_ACTION_DELETE:
+    case FPI_DEVICE_ACTION_DELETE:
       fpi_device_delete_complete (device, error);
       break;
 
-    case FP_DEVICE_ACTION_LIST:
+    case FPI_DEVICE_ACTION_LIST:
       fpi_device_list_complete (device, NULL, error);
       break;
 
     default:
-    case FP_DEVICE_ACTION_NONE:
+    case FPI_DEVICE_ACTION_NONE:
       g_return_if_reached ();
       break;
     }
@@ -663,7 +688,7 @@ fp_device_task_return_in_idle_cb (gpointer user_data)
   g_debug ("Completing action %d in idle!", priv->current_action);
 
   task = g_steal_pointer (&priv->current_task);
-  priv->current_action = FP_DEVICE_ACTION_NONE;
+  priv->current_action = FPI_DEVICE_ACTION_NONE;
   priv->current_task_idle_return_source = NULL;
 
   switch (data->type)
@@ -746,7 +771,7 @@ fpi_device_probe_complete (FpDevice    *device,
   FpDevicePrivate *priv = fp_device_get_instance_private (device);
 
   g_return_if_fail (FP_IS_DEVICE (device));
-  g_return_if_fail (priv->current_action == FP_DEVICE_ACTION_PROBE);
+  g_return_if_fail (priv->current_action == FPI_DEVICE_ACTION_PROBE);
 
   g_debug ("Device reported probe completion");
 
@@ -788,7 +813,7 @@ fpi_device_open_complete (FpDevice *device, GError *error)
   FpDevicePrivate *priv = fp_device_get_instance_private (device);
 
   g_return_if_fail (FP_IS_DEVICE (device));
-  g_return_if_fail (priv->current_action == FP_DEVICE_ACTION_OPEN);
+  g_return_if_fail (priv->current_action == FPI_DEVICE_ACTION_OPEN);
 
   g_debug ("Device reported open completion");
 
@@ -821,13 +846,11 @@ fpi_device_close_complete (FpDevice *device, GError *error)
   FpDevicePrivate *priv = fp_device_get_instance_private (device);
 
   g_return_if_fail (FP_IS_DEVICE (device));
-  g_return_if_fail (priv->current_action == FP_DEVICE_ACTION_CLOSE);
+  g_return_if_fail (priv->current_action == FPI_DEVICE_ACTION_CLOSE);
 
   g_debug ("Device reported close completion");
 
   clear_device_cancel_action (device);
-  priv->is_open = FALSE;
-  g_object_notify (G_OBJECT (device), "open");
 
   switch (priv->type)
     {
@@ -852,10 +875,16 @@ fpi_device_close_complete (FpDevice *device, GError *error)
     }
 
   if (!error)
-    fpi_device_return_task_in_idle (device, FP_DEVICE_TASK_RETURN_BOOL,
-                                    GUINT_TO_POINTER (TRUE));
+    {
+      priv->is_open = FALSE;
+      g_object_notify (G_OBJECT (device), "open");
+      fpi_device_return_task_in_idle (device, FP_DEVICE_TASK_RETURN_BOOL,
+                                      GUINT_TO_POINTER (TRUE));
+    }
   else
-    fpi_device_return_task_in_idle (device, FP_DEVICE_TASK_RETURN_ERROR, error);
+    {
+      fpi_device_return_task_in_idle (device, FP_DEVICE_TASK_RETURN_ERROR, error);
+    }
 }
 
 /**
@@ -873,7 +902,7 @@ fpi_device_enroll_complete (FpDevice *device, FpPrint *print, GError *error)
   FpDevicePrivate *priv = fp_device_get_instance_private (device);
 
   g_return_if_fail (FP_IS_DEVICE (device));
-  g_return_if_fail (priv->current_action == FP_DEVICE_ACTION_ENROLL);
+  g_return_if_fail (priv->current_action == FPI_DEVICE_ACTION_ENROLL);
 
   g_debug ("Device reported enroll completion");
 
@@ -883,6 +912,20 @@ fpi_device_enroll_complete (FpDevice *device, FpPrint *print, GError *error)
     {
       if (FP_IS_PRINT (print))
         {
+          FpiPrintType print_type;
+
+          g_object_get (print, "fpi-type", &print_type, NULL);
+          if (print_type == FPI_PRINT_UNDEFINED)
+            {
+              g_warning ("Driver did not set the type on the returned print!");
+              g_clear_object (&print);
+
+              error = fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+                                                "Driver provided incorrect print data!");
+              fpi_device_return_task_in_idle (device, FP_DEVICE_TASK_RETURN_ERROR, error);
+              return;
+            }
+
           fpi_device_return_task_in_idle (device, FP_DEVICE_TASK_RETURN_OBJECT, print);
         }
       else
@@ -907,64 +950,68 @@ fpi_device_enroll_complete (FpDevice *device, FpPrint *print, GError *error)
 /**
  * fpi_device_verify_complete:
  * @device: The #FpDevice
- * @result: The #FpiMatchResult of the operation
- * @print: The scanned #FpPrint
  * @error: A #GError if result is %FPI_MATCH_ERROR
  *
  * Finish an ongoing verify operation. The returned print should be
  * representing the new scan and not the one passed for verification.
+ *
+ * Note that @error should only be set for actual errors. In the case
+ * of retry errors, report these using fpi_device_verify_report()
+ * and then call this function without any error argument.
  */
 void
-fpi_device_verify_complete (FpDevice      *device,
-                            FpiMatchResult result,
-                            FpPrint       *print,
-                            GError        *error)
+fpi_device_verify_complete (FpDevice *device,
+                            GError   *error)
 {
   FpDevicePrivate *priv = fp_device_get_instance_private (device);
+  FpMatchData *data;
 
   g_return_if_fail (FP_IS_DEVICE (device));
-  g_return_if_fail (priv->current_action == FP_DEVICE_ACTION_VERIFY);
+  g_return_if_fail (priv->current_action == FPI_DEVICE_ACTION_VERIFY);
 
   g_debug ("Device reported verify completion");
 
-  clear_device_cancel_action (device);
+  data = g_task_get_task_data (priv->current_task);
 
-  g_object_set_data_full (G_OBJECT (priv->current_task),
-                          "print",
-                          print,
-                          g_object_unref);
+  clear_device_cancel_action (device);
 
   if (!error)
     {
-      if (result != FPI_MATCH_ERROR)
+      if (!data->result_reported)
         {
-          fpi_device_return_task_in_idle (device, FP_DEVICE_TASK_RETURN_INT,
-                                          GINT_TO_POINTER (result));
+          g_warning ("Driver reported successful verify complete but did not report the result earlier. Reporting error instead");
+          fpi_device_return_task_in_idle (device, FP_DEVICE_TASK_RETURN_ERROR,
+                                          fpi_device_error_new (FP_DEVICE_ERROR_GENERAL));
+        }
+      else if (data->error)
+        {
+          fpi_device_return_task_in_idle (device, FP_DEVICE_TASK_RETURN_ERROR, g_steal_pointer (&data->error));
         }
       else
         {
-          g_warning ("Driver did not provide an error for a failed verify operation!");
-          error = fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
-                                            "Driver failed to provide an error!");
-          fpi_device_return_task_in_idle (device, FP_DEVICE_TASK_RETURN_ERROR, error);
+          fpi_device_return_task_in_idle (device, FP_DEVICE_TASK_RETURN_INT,
+                                          GINT_TO_POINTER (data->match != NULL ? FPI_MATCH_SUCCESS : FPI_MATCH_FAIL));
         }
     }
   else
     {
-      fpi_device_return_task_in_idle (device, FP_DEVICE_TASK_RETURN_ERROR, error);
-      if (result != FPI_MATCH_ERROR)
+      /* Replace a retry error with a general error, this is a driver bug. */
+      if (error->domain == FP_DEVICE_RETRY)
         {
-          g_warning ("Driver passed an error but also provided a match result, returning error!");
-          g_object_unref (print);
+          g_warning ("Driver reported a retry error to fpi_device_verify_complete. "
+                     "This is not permissible and needs to be reported using "
+                     "fpi_device_verify_report, reporting general verification "
+                     "failure instead.");
+          g_clear_error (&error);
+          error = fpi_device_error_new (FP_DEVICE_ERROR_GENERAL);
         }
+      fpi_device_return_task_in_idle (device, FP_DEVICE_TASK_RETURN_ERROR, error);
     }
 }
 
 /**
  * fpi_device_identify_complete:
  * @device: The #FpDevice
- * @match: The matching #FpPrint from the passed gallery, or %NULL if none matched
- * @print: The scanned #FpPrint, may be %NULL
  * @error: The #GError or %NULL on success
  *
  * Finish an ongoing identify operation. The match that was identified is
@@ -973,40 +1020,50 @@ fpi_device_verify_complete (FpDevice      *device,
  */
 void
 fpi_device_identify_complete (FpDevice *device,
-                              FpPrint  *match,
-                              FpPrint  *print,
                               GError   *error)
 {
   FpDevicePrivate *priv = fp_device_get_instance_private (device);
+  FpMatchData *data;
 
   g_return_if_fail (FP_IS_DEVICE (device));
-  g_return_if_fail (priv->current_action == FP_DEVICE_ACTION_IDENTIFY);
+  g_return_if_fail (priv->current_action == FPI_DEVICE_ACTION_IDENTIFY);
 
   g_debug ("Device reported identify completion");
 
+  data = g_task_get_task_data (priv->current_task);
+
   clear_device_cancel_action (device);
 
-  g_object_set_data_full (G_OBJECT (priv->current_task),
-                          "print",
-                          print,
-                          g_object_unref);
-  g_object_set_data_full (G_OBJECT (priv->current_task),
-                          "match",
-                          match,
-                          g_object_unref);
   if (!error)
     {
-      fpi_device_return_task_in_idle (device, FP_DEVICE_TASK_RETURN_BOOL,
-                                      GUINT_TO_POINTER (TRUE));
+      if (!data->result_reported)
+        {
+          g_warning ("Driver reported successful identify complete but did not report the result earlier. Reporting error instead");
+          fpi_device_return_task_in_idle (device, FP_DEVICE_TASK_RETURN_ERROR,
+                                          fpi_device_error_new (FP_DEVICE_ERROR_GENERAL));
+        }
+      else if (data->error)
+        {
+          fpi_device_return_task_in_idle (device, FP_DEVICE_TASK_RETURN_ERROR, g_steal_pointer (&data->error));
+        }
+      else
+        {
+          fpi_device_return_task_in_idle (device, FP_DEVICE_TASK_RETURN_INT, GINT_TO_POINTER (TRUE));
+        }
     }
   else
     {
-      fpi_device_return_task_in_idle (device, FP_DEVICE_TASK_RETURN_ERROR, error);
-      if (match)
+      /* Replace a retry error with a general error, this is a driver bug. */
+      if (error->domain == FP_DEVICE_RETRY)
         {
-          g_warning ("Driver passed an error but also provided a match result, returning error!");
-          g_clear_object (&match);
+          g_warning ("Driver reported a retry error to fpi_device_identify_complete. "
+                     "This is not permissible and needs to be reported using "
+                     "fpi_device_identify_report, reporting general identification "
+                     "failure instead.");
+          g_clear_error (&error);
+          error = fpi_device_error_new (FP_DEVICE_ERROR_GENERAL);
         }
+      fpi_device_return_task_in_idle (device, FP_DEVICE_TASK_RETURN_ERROR, error);
     }
 }
 
@@ -1027,7 +1084,7 @@ fpi_device_capture_complete (FpDevice *device,
   FpDevicePrivate *priv = fp_device_get_instance_private (device);
 
   g_return_if_fail (FP_IS_DEVICE (device));
-  g_return_if_fail (priv->current_action == FP_DEVICE_ACTION_CAPTURE);
+  g_return_if_fail (priv->current_action == FPI_DEVICE_ACTION_CAPTURE);
 
   g_debug ("Device reported capture completion");
 
@@ -1072,7 +1129,7 @@ fpi_device_delete_complete (FpDevice *device,
   FpDevicePrivate *priv = fp_device_get_instance_private (device);
 
   g_return_if_fail (FP_IS_DEVICE (device));
-  g_return_if_fail (priv->current_action == FP_DEVICE_ACTION_DELETE);
+  g_return_if_fail (priv->current_action == FPI_DEVICE_ACTION_DELETE);
 
   g_debug ("Device reported deletion completion");
 
@@ -1106,7 +1163,7 @@ fpi_device_list_complete (FpDevice  *device,
   FpDevicePrivate *priv = fp_device_get_instance_private (device);
 
   g_return_if_fail (FP_IS_DEVICE (device));
-  g_return_if_fail (priv->current_action == FP_DEVICE_ACTION_LIST);
+  g_return_if_fail (priv->current_action == FPI_DEVICE_ACTION_LIST);
 
   g_debug ("Device reported listing completion");
 
@@ -1134,7 +1191,7 @@ fpi_device_list_complete (FpDevice  *device,
  * fpi_device_enroll_progress:
  * @device: The #FpDevice
  * @completed_stages: The number of stages that are completed at this point
- * @print: (transfer full): The #FpPrint for the newly completed stage or %NULL on failure
+ * @print: (transfer floating): The #FpPrint for the newly completed stage or %NULL on failure
  * @error: (transfer full): The #GError or %NULL on success
  *
  * Notify about the progress of the enroll operation. This is important for UI interaction.
@@ -1150,10 +1207,13 @@ fpi_device_enroll_progress (FpDevice *device,
   FpEnrollData *data;
 
   g_return_if_fail (FP_IS_DEVICE (device));
-  g_return_if_fail (priv->current_action == FP_DEVICE_ACTION_ENROLL);
+  g_return_if_fail (priv->current_action == FPI_DEVICE_ACTION_ENROLL);
   g_return_if_fail (error == NULL || error->domain == FP_DEVICE_RETRY);
 
   g_debug ("Device reported enroll progress, reported %i of %i have been completed", completed_stages, priv->nr_enroll_stages);
+
+  if (print)
+    g_object_ref_sink (print);
 
   if (error && print)
     {
@@ -1174,4 +1234,152 @@ fpi_device_enroll_progress (FpDevice *device,
 
   g_clear_error (&error);
   g_clear_object (&print);
+}
+
+/**
+ * fpi_device_verify_report:
+ * @device: The #FpDevice
+ * @result: The #FpiMatchResult of the operation
+ * @print: (transfer floating) The scanned #FpPrint
+ * @error: A #GError if result is %FPI_MATCH_ERROR
+ *
+ * Report the result of a verify operation. Note that the passed @error must be
+ * a retry error with the %FP_DEVICE_RETRY domain. For all other error cases,
+ * the error should passed to fpi_device_verify_complete().
+ */
+void
+fpi_device_verify_report (FpDevice      *device,
+                          FpiMatchResult result,
+                          FpPrint       *print,
+                          GError        *error)
+{
+  FpDevicePrivate *priv = fp_device_get_instance_private (device);
+  FpMatchData *data = g_task_get_task_data (priv->current_task);
+  gboolean call_cb = TRUE;
+
+  g_return_if_fail (FP_IS_DEVICE (device));
+  g_return_if_fail (priv->current_action == FPI_DEVICE_ACTION_VERIFY);
+  g_return_if_fail (data->result_reported == FALSE);
+
+  data->result_reported = TRUE;
+
+  g_debug ("Device reported verify result");
+
+  if (print)
+    print = g_object_ref_sink (print);
+
+  if (error || result == FPI_MATCH_ERROR)
+    {
+      if (result != FPI_MATCH_ERROR)
+        g_warning ("Driver reported an error code without setting match result to error!");
+
+      if (error == NULL)
+        {
+          g_warning ("Driver reported an error without specifying a retry code, assuming general retry error!");
+          error = fpi_device_retry_new (FP_DEVICE_RETRY_GENERAL);
+        }
+
+      if (print)
+        {
+          g_warning ("Driver reported a print together with an error!");
+          g_clear_object (&print);
+        }
+
+      data->error = error;
+
+      if (error->domain != FP_DEVICE_RETRY)
+        {
+          g_warning ("Driver reported a verify error that was not in the retry domain, delaying report!");
+          call_cb = FALSE;
+        }
+    }
+  else
+    {
+      if (result == FPI_MATCH_SUCCESS)
+        {
+          fpi_device_get_verify_data (device, &data->match);
+          g_object_ref (data->match);
+        }
+
+      data->print = g_steal_pointer (&print);
+    }
+
+  if (call_cb && data->match_cb)
+    data->match_cb (device, data->match, data->print, data->match_data, data->error);
+}
+
+/**
+ * fpi_device_identify_report:
+ * @device: The #FpDevice
+ * @match: (transfer none): The #FpPrint from the gallery that matched
+ * @print: (transfer floating): The scanned #FpPrint
+ * @error: A #GError if result is %FPI_MATCH_ERROR
+ *
+ * Report the result of a identify operation. Note that the passed @error must be
+ * a retry error with the %FP_DEVICE_RETRY domain. For all other error cases,
+ * the error should passed to fpi_device_identify_complete().
+ */
+void
+fpi_device_identify_report (FpDevice *device,
+                            FpPrint  *match,
+                            FpPrint  *print,
+                            GError   *error)
+{
+  FpDevicePrivate *priv = fp_device_get_instance_private (device);
+  FpMatchData *data = g_task_get_task_data (priv->current_task);
+  gboolean call_cb = TRUE;
+
+  g_return_if_fail (FP_IS_DEVICE (device));
+  g_return_if_fail (priv->current_action == FPI_DEVICE_ACTION_IDENTIFY);
+  g_return_if_fail (data->result_reported == FALSE);
+
+  data->result_reported = TRUE;
+
+  if (match)
+    g_object_ref (match);
+
+  if (print)
+    print = g_object_ref_sink (print);
+
+  if (match && !g_ptr_array_find (data->gallery, match, NULL))
+    {
+      g_warning ("Driver reported a match to a print that was not in the gallery, ignoring match.");
+      g_clear_object (&match);
+    }
+
+  g_debug ("Device reported identify result");
+
+  if (error)
+    {
+      if (match != NULL)
+        {
+          g_warning ("Driver reported an error code but also provided a match!");
+          g_clear_object (&match);
+        }
+
+      if (print)
+        {
+          g_warning ("Driver reported a print together with an error!");
+          g_clear_object (&print);
+        }
+
+      data->error = error;
+
+      if (error->domain != FP_DEVICE_RETRY)
+        {
+          g_warning ("Driver reported a verify error that was not in the retry domain, delaying report!");
+          call_cb = FALSE;
+        }
+    }
+  else
+    {
+      if (match)
+        data->match = g_steal_pointer (&match);
+
+      if (print)
+        data->print = g_steal_pointer (&print);
+    }
+
+  if (call_cb && data->match_cb)
+    data->match_cb (device, data->match, data->print, data->match_data, data->error);
 }

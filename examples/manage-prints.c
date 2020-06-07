@@ -18,6 +18,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#define FP_COMPONENT "example-mange-prints"
+
 #include <stdio.h>
 
 #include <libfprint/fprint.h>
@@ -197,9 +199,6 @@ on_list_completed (FpDevice     *dev,
                 list_data->ret_value = EXIT_SUCCESS;
               else
                 g_warning ("Invalid finger selected");
-
-              fp_device_close (dev, NULL, (GAsyncReadyCallback) on_device_closed,
-                               list_data);
             }
         }
 

@@ -41,7 +41,7 @@ typedef struct
   GSList      *sources;
 
   /* We always make sure that only one task is run at a time. */
-  FpDeviceAction      current_action;
+  FpiDeviceAction     current_action;
   GTask              *current_task;
   GAsyncReadyCallback current_user_cb;
   gulong              current_cancellable_id;
@@ -63,3 +63,20 @@ typedef struct
 } FpEnrollData;
 
 void enroll_data_free (FpEnrollData *enroll_data);
+
+typedef struct
+{
+  FpPrint       *enrolled_print;   /* verify */
+  GPtrArray     *gallery;   /* identify */
+
+  gboolean       result_reported;
+  FpPrint       *match;
+  FpPrint       *print;
+  GError        *error;
+
+  FpMatchCb      match_cb;
+  gpointer       match_data;
+  GDestroyNotify match_destroy;
+} FpMatchData;
+
+void match_data_free (FpMatchData *match_data);

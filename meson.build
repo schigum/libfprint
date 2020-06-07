@@ -1,12 +1,12 @@
 project('libfprint', [ 'c', 'cpp' ],
-    version: '1.90.0',
+    version: '1.90.1',
     license: 'LGPLv2.1+',
     default_options: [
         'buildtype=debugoptimized',
         'warning_level=1',
-        'c_std=c99',
+        'c_std=gnu99',
     ],
-    meson_version: '>= 0.46.0')
+    meson_version: '>= 0.49.0')
 
 gnome = import('gnome')
 
@@ -53,10 +53,9 @@ common_cflags = cc.get_supported_arguments([
     '-DGLIB_VERSION_MIN_REQUIRED=' + glib_version_def,
     '-DGLIB_VERSION_MAX_ALLOWED=' + glib_version_def,
     '-D_GNU_SOURCE',
-    '-DG_LOG_DOMAIN="libfprint"',
+    '-DG_LOG_DOMAIN="@0@"'.format(meson.project_name()),
 ])
 c_cflags = cc.get_supported_arguments([
-    '-std=gnu99',
     '-Wimplicit-function-declaration',
     '-Wmissing-prototypes',
     '-Wnested-externs',
@@ -75,12 +74,17 @@ soversion = 2
 current = 0
 revision = 0
 libversion = '@0@.@1@.@2@'.format(soversion, current, revision)
+versioned_libname = meson.project_name() + '-' + soversion.to_string()
 
 # Dependencies
 glib_dep = dependency('glib-2.0', version: '>=' + glib_min_version)
 gio_dep = dependency('gio-unix-2.0', version: '>=' + glib_min_version)
-gusb_dep = dependency('gusb', version: '>= 0.3.0')
+gobject_dep = dependency('gobject-2.0', version: '>=' + glib_min_version)
+gusb_dep = dependency('gusb', version: '>= 0.2.0')
 mathlib_dep = cc.find_library('m', required: false)
+
+# The following dependencies are only used for tests
+cairo_dep = dependency('cairo', required: false)
 
 # Drivers
 drivers = get_option('drivers').split(',')
@@ -219,10 +223,11 @@ subdir('tests')
 
 pkgconfig = import('pkgconfig')
 pkgconfig.generate(
-    name: 'libfprint',
+    name: versioned_libname,
     description: 'Generic C API for fingerprint reader access',
     version: meson.project_version(),
     libraries: libfprint,
-    subdirs: 'libfprint',
-    filebase: 'libfprint2',
-    install_dir: join_paths(get_option('libdir'), 'pkgconfig'))
+    requires: [gio_dep, gobject_dep],
+    subdirs: versioned_libname,
+    filebase: versioned_libname,
+)

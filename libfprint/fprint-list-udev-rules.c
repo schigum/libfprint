@@ -2,7 +2,7 @@
  * Copyright (C) 2009 Red Hat <mjg@redhat.com>
  * Copyright (C) 2008 Bastien Nocera <hadess@hadess.net>
  * Copyright (C) 2008 Timo Hoenig <thoenig@suse.de>, <thoenig@nouse.net>
- * Coypright (C) 2019 Benjamin Berg <bberg@redhat.com>
+ * Copyright (C) 2019 Benjamin Berg <bberg@redhat.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -103,8 +103,7 @@ main (int argc, char **argv)
   for (i = 0; i < drivers->len; i++)
     {
       GType driver = g_array_index (drivers, GType, i);
-      g_autoptr(GTypeClass) type_class = g_type_class_ref (driver);
-      FpDeviceClass *cls = FP_DEVICE_CLASS (type_class);
+      g_autoptr(FpDeviceClass) cls = g_type_class_ref (driver);
 
       if (cls->type != FP_DEVICE_TYPE_USB)
         continue;

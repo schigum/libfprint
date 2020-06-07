@@ -30,8 +30,7 @@ G_BEGIN_DECLS
 #define FPI_USB_ENDPOINT_OUT 0x00
 
 typedef struct _FpiUsbTransfer FpiUsbTransfer;
-
-#include "fpi-ssm.h"
+typedef struct _FpiSsm         FpiSsm;
 
 typedef void (*FpiUsbTransferCallback)(FpiUsbTransfer *transfer,
                                        FpDevice       *dev,
@@ -62,7 +61,7 @@ typedef enum  {
  * @length: The requested length of the transfer in bytes.
  * @actual_length: The actual length of the transfer
  *  (see also fpi_usb_transfer_set_short_error())
- * @buffer: The transfered data.
+ * @buffer: The transferred data.
  *
  * Helper for handling USB transfers.
  */
