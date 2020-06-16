@@ -149,11 +149,11 @@ foreach driver: drivers
     if driver == 'vfs0090'
         nss_dep = dependency('nss', required: false)
         if not nss_dep.found()
-            error('NSS is required for the Validity VFS0090 driver')
+            error('NSS is required for the Validity VFS009x drivers')
         endif
         openssl_dep = dependency('openssl', required: false)
         if not openssl_dep.found()
-            error('OpenSSL is required for the Validity VFS0090 driver')
+            error('OpenSSL is required for the Validity VFS009x drivers')
         endif
         imaging_dep = dependency('pixman-1', required: false)
         if not imaging_dep.found()
