@@ -117,9 +117,10 @@ async_abort_callback (FpiUsbTransfer *transfer, FpDevice *device,
   int ep = transfer->endpoint;
 
   /* In normal case endpoint is empty */
-  if (g_error_matches (error, G_USB_DEVICE_ERROR, G_USB_DEVICE_ERROR_TIMED_OUT))
+  if (g_error_matches (error, G_USB_DEVICE_ERROR, G_USB_DEVICE_ERROR_TIMED_OUT) ||
+      (g_strcmp0 (g_getenv ("FP_DEVICE_EMULATION"), "1") == 0 && transfer->actual_length == 0))
     {
-      g_error_free (error);
+      g_clear_error (&error);
       fpi_ssm_next_state (transfer->ssm);
       return;
     }
@@ -242,6 +243,7 @@ prepare_image (FpDeviceVfs0050 *vdev)
 
   /* Building GSList */
   GSList *lines = NULL;
+
   for (int i = height - 1; i >= 0; --i)
     lines = g_slist_prepend (lines, vdev->lines_buffer + i);
 
@@ -669,6 +671,7 @@ dev_activate (FpImageDevice *idev)
   self->ssm_active = 1;
 
   FpiSsm *ssm = fpi_ssm_new (FP_DEVICE (idev), activate_ssm, SSM_STATES);
+
   fpi_ssm_start (ssm, dev_activate_callback);
 }
 
@@ -712,6 +715,7 @@ dev_open (FpImageDevice *idev)
 
   /* Clearing previous device state */
   FpiSsm *ssm = fpi_ssm_new (FP_DEVICE (idev), activate_ssm, SSM_STATES);
+
   fpi_ssm_start (ssm, dev_open_callback);
 }
 
