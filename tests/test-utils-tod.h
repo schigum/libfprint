@@ -21,3 +21,5 @@
 #include "test-utils.h"
 
 FptContext * fpt_context_new_with_fake_dev (void);
+
+FptContext * fpt_context_fake_dev_default (void);

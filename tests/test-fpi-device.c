@@ -26,6 +26,26 @@
 #include "fpi-log.h"
 #include "test-device-fake.h"
 
+#ifdef TEST_TOD_DRIVER
+
+#include "test-utils-tod.h"
+
+#undef FPI_TYPE_DEVICE_FAKE
+#define FPI_TYPE_DEVICE_FAKE (fpt_context_device_driver_get_type ())
+
+#undef FPI_DEVICE_FAKE
+#define FPI_DEVICE_FAKE(dev) (G_TYPE_CHECK_INSTANCE_CAST ((dev), FPI_TYPE_DEVICE_FAKE, FpiDeviceFake))
+
+static GType
+fpt_context_device_driver_get_type (void)
+{
+  FptContext *tctx = fpt_context_fake_dev_default ();
+
+  return G_TYPE_FROM_CLASS (FP_DEVICE_GET_CLASS (tctx->device));
+}
+
+#endif
+
 /* Utility functions */
 
 typedef FpDevice FpAutoCloseDevice;
@@ -2343,6 +2363,10 @@ test_driver_retry_error_types (void)
 int
 main (int argc, char *argv[])
 {
+#ifdef TEST_TOD_DRIVER
+  g_autoptr(FptContext) tctx = fpt_context_fake_dev_default ();
+#endif
+
   g_test_init (&argc, &argv, NULL);
 
   g_test_add_func ("/driver/get_driver", test_driver_get_driver);

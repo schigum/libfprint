@@ -229,11 +229,14 @@ if get_option('tod')
     tod_unit_tests = [
         'fp-context-tod',
         'fp-device-tod',
+        'fpi-device',
     ]
 
     foreach test_name: tod_unit_tests
         basename = 'test-' + test_name
-        test_exe = executable(basename,
+        sufix = test_name.endswith('-tod') ? '' : '-tod'
+        test_name = test_name + sufix
+        test_exe = executable(basename + sufix,
             sources: basename + '.c',
             dependencies: libfprint_private_dep,
             c_args: [

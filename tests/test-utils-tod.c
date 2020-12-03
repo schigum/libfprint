@@ -21,6 +21,8 @@
 
 #include "test-utils-tod.h"
 
+static FptContext *fake_context = NULL;
+
 FptContext *
 fpt_context_new_with_fake_dev (void)
 {
@@ -49,4 +51,14 @@ fpt_context_new_with_fake_dev (void)
   g_object_add_weak_pointer (G_OBJECT (tctx->device), (gpointer) & tctx->device);
 
   return tctx;
+}
+
+FptContext *
+fpt_context_fake_dev_default (void)
+{
+  if (fake_context)
+    return fake_context;
+
+  fake_context = fpt_context_new_with_fake_dev ();
+  return fake_context;
 }
