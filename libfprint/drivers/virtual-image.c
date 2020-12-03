@@ -208,8 +208,12 @@ recv_image (FpDeviceVirtualImage *self, GInputStream *stream)
   g_debug ("Starting image receive (if active), state is: %i", state);
 
   /* Only register if the state is active. */
-  if (state >= FPI_IMAGE_DEVICE_STATE_IDLE)
+  switch (state)
     {
+    case FPI_IMAGE_DEVICE_STATE_IDLE:
+    case FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_ON:
+    case FPI_IMAGE_DEVICE_STATE_CAPTURE:
+    case FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_OFF:
       g_input_stream_read_all_async (stream,
                                      self->recv_img_hdr,
                                      sizeof (self->recv_img_hdr),
@@ -217,6 +221,10 @@ recv_image (FpDeviceVirtualImage *self, GInputStream *stream)
                                      self->cancellable,
                                      recv_image_hdr_recv_cb,
                                      self);
+    /* fallthrough */
+
+    default:
+      break;
     }
 }
 
