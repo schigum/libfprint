@@ -214,6 +214,14 @@ if get_option('tod')
         install: false
     )
 
+    test_utils_tod = static_library('fprint-test-utils-tod',
+        sources: [
+            'test-utils-tod.c',
+        ],
+        dependencies: libfprint_private_dep,
+        link_with: test_utils,
+        install: false)
+
     tod_unit_tests = [
         'fp-context-tod',
         'fp-device-tod',
@@ -225,7 +233,7 @@ if get_option('tod')
             sources: basename + '.c',
             dependencies: libfprint_private_dep,
             c_args: common_cflags,
-            link_with: test_utils,
+            link_with: test_utils_tod,
         )
         test(test_name,
             find_program('test-runner.sh'),
