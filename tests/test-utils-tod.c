@@ -38,7 +38,7 @@ fpt_context_new_with_fake_dev (void)
     {
       FpDevice *device = devices->pdata[i];
 
-      if (g_strcmp0 (fp_device_get_driver (device), "fake_test_dev") == 0)
+      if (g_strcmp0 (fp_device_get_driver (device), "fake_test_dev_tod") == 0)
         {
           tctx->device = device;
           break;

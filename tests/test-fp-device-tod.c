@@ -147,7 +147,7 @@ test_device_get_driver (void)
   g_autoptr(FptContext) tctx = fpt_context_new_with_fake_dev ();
 
   fp_device_open_sync (tctx->device, NULL, NULL);
-  g_assert_cmpstr (fp_device_get_driver (tctx->device), ==, "fake_test_dev");
+  g_assert_cmpstr (fp_device_get_driver (tctx->device), ==, "fake_test_dev_tod");
 }
 
 static void
@@ -156,7 +156,7 @@ test_device_get_device_id (void)
   g_autoptr(FptContext) tctx = fpt_context_new_with_fake_dev ();
 
   fp_device_open_sync (tctx->device, NULL, NULL);
-  g_assert_cmpstr (fp_device_get_device_id (tctx->device), ==, "fake_test_dev");
+  g_assert_cmpstr (fp_device_get_device_id (tctx->device), ==, "fake_test_dev_tod");
 }
 
 static void

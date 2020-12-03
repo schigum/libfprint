@@ -60,7 +60,7 @@ test_context_has_fake_device (void)
     {
       FpDevice *device = devices->pdata[i];
 
-      if (g_strcmp0 (fp_device_get_driver (device), "fake_test_dev") == 0)
+      if (g_strcmp0 (fp_device_get_driver (device), "fake_test_dev_tod") == 0)
         {
           fake_device = device;
           break;

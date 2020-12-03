@@ -199,14 +199,18 @@ if get_option('tod')
     tod_envs.set('FP_TOD_DRIVERS_DIR', meson.current_build_dir())
     tod_envs.set('FP_TOD_KEEP_MODULES_OPEN', 'TRUE')
     tod_envs.set('FP_VIRTUAL_FAKE_DEVICE', 'yes')
-    tod_envs.append('FP_DRIVERS_WHITELIST', 'fake_test_dev')
+    tod_envs.append('FP_DRIVERS_WHITELIST', 'fake_test_dev_tod')
+    tod_c_args = [
+        '-DTEST_TOD_DRIVER=1',
+    ]
 
     fake_driver = shared_module('device-fake-tod-driver',
         sources: [
+            'test-device-fake.c',
             'test-device-fake-tod.c',
         ],
+        c_args: tod_c_args,
         link_with: [
-            test_utils,
             libfprint_tod,
         ],
         include_directories: include_directories('../libfprint'),
@@ -216,10 +220,10 @@ if get_option('tod')
 
     test_utils_tod = static_library('fprint-test-utils-tod',
         sources: [
+            'test-utils.c',
             'test-utils-tod.c',
         ],
         dependencies: libfprint_private_dep,
-        link_with: test_utils,
         install: false)
 
     tod_unit_tests = [
@@ -232,7 +236,10 @@ if get_option('tod')
         test_exe = executable(basename,
             sources: basename + '.c',
             dependencies: libfprint_private_dep,
-            c_args: common_cflags,
+            c_args: [
+                common_cflags,
+                tod_c_args,
+            ],
             link_with: test_utils_tod,
         )
         test(test_name,
@@ -240,6 +247,7 @@ if get_option('tod')
             suite: ['unit-tests', 'tod'],
             args: [test_exe],
             env: tod_envs,
+            depends: fake_driver,
         )
     endforeach
 endif
