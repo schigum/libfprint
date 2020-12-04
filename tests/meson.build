@@ -200,6 +200,7 @@ if get_option('tod')
     tod_envs.set('FP_TOD_KEEP_MODULES_OPEN', 'TRUE')
     tod_envs.set('FP_VIRTUAL_FAKE_DEVICE', 'yes')
     tod_envs.append('FP_DRIVERS_WHITELIST', 'fake_test_dev_tod')
+    tod_envs.set('FP_TOD_TEST_DRIVER_NAME', 'fake_test_dev_tod')
     tod_c_args = [
         '-DTEST_TOD_DRIVER=1',
     ]
