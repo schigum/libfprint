@@ -19,7 +19,7 @@
  */
 
 #ifdef TEST_TOD_DRIVER
-#define FP_COMPONENT "fake_test_dev_tod"
+#define FP_COMPONENT "fake_test_dev_tod_current"
 #else
 #define FP_COMPONENT "fake_test_dev"
 #endif
