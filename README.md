@@ -1,19 +1,19 @@
 ## Validity Sensor `138a:0090` and `138a:0097` libfprint driver
+
 #### A linux driver for 2016 ThinkPad's fingerprint readers
 
 [![See it in action!](https://img.youtube.com/vi/dYe8eKaoUSE/0.jpg)](https://www.youtube.com/watch?v=dYe8eKaoUSE)`
 
 Thanks to the amazing work that [nmikhailov](https://github.com/nmikhailov) did in his [prototype](https://github.com/nmikhailov/Validity90/) and [uunicorn](https://github.com/uunicorn/) in [python-validity](https://github.com/uunicorn/python-validity) and [synaWudfBioUsb-sandbox](https://github.com/uunicorn/synaWudfBioUsb-sandbox), I spent some time in getting a libfprint driver for the `138a:0090` (and `138a:0097`) device up...
 
- * It only works if the device has been initialized using [validity-sensors-tools/](https://snapcraft.io/validity-sensors-tools/)
-   - Alernatively, but it's less secure, you can use a Windows installation with VirtualBox (sharing USB) guest or with a Windows installation in bare metal
- * This version works only with fprintd2, if you still use fprintd see the [old version](https://github.com/3v1n0/libfprint/tree/vfs0090-libfprint1).
- * Most of the device interaction and crypto code is coming from the prototype, so basically it needs lots of cleanup, but I hope to rebase this on the code from python-validity
- * Here enroll, verification, led and all the operations work
- * It uses libfprint image comparison algorithm, we might move to in-device check later.
+- It only works if the device has been initialized using [validity-sensors-tools/](https://snapcraft.io/validity-sensors-tools/)
+  - Alernatively, but it's less secure, you can use a Windows installation with VirtualBox (sharing USB) guest or with a Windows installation in bare metal
+- This version works only with fprintd2, if you still use fprintd see the [old version](https://github.com/3v1n0/libfprint/tree/vfs0090-libfprint1).
+- Most of the device interaction and crypto code is coming from the prototype, so basically it needs lots of cleanup, but I hope to rebase this on the code from python-validity
+- Here enroll, verification, led and all the operations work
+- It uses libfprint image comparison algorithm, we might move to in-device check later.
 
 You can test it using the [examples](tree/vfs0090/examples) or just using `fprintd-*` tools (GNOME supports it natively from control center).
-
 
 ### Device initialization and pairing
 
@@ -57,6 +57,7 @@ Also, in the ubuntu (and derivates) the code that you will use will be based on 
 You can enroll your fingers by using the `fprintd-enroll` utility or from UI using `unity-control-center user-accounts` in unity or `gnome-control-center user-accounts` in GNOME (it's the same as going in System settings -> User accounts pane and enable the fingerprint login).
 
 So, in steps (for ubuntu) it would be:
+
 ```bash
 # Initialize the device
 sudo snap install validity-sensors-tools
@@ -74,10 +75,12 @@ Then go in system settings (account) and enable the fingerprint login
 #### Arch linux Installation
 
 Install packages:
- * `fprintd`
- * `libfprint-vfs0090-git` from AUR
+
+- `fprintd`
+- `libfprint-vfs0090-git` from AUR
 
 #### Fedora (tested on 28)
+
 - `sudo dnf install -y libusb*-devel libtool nss nss-devel gtk3-devel glib2-devel openssl openssl-devel libXv-devel gcc-c++`
 - `git clone https://github.com/3v1n0/libfprint`
 - `meson libfprint libfprint/_build && sudo ninja -C libfprint/_build install`
@@ -96,11 +99,12 @@ On release 21.05 or newer, and assuming `pkgsUnstable` is an unstable nixpkgs, c
 ```
 
 #### Other distros
- - `git clone https://github.com/3v1n0/libfprint`
- - `meson libfprint libfprint/_build && sudo ninja -C libfprint/_build install`
 
+- `git clone https://github.com/3v1n0/libfprint`
+- `meson libfprint libfprint/_build && sudo ninja -C libfprint/_build install`
 
 #### fprintd enrolling
+
 ```bash
 for finger in {left,right}-{thumb,{index,middle,ring,little}-finger}; do fprintd-enroll -f "$finger" "$USER"; done
 ```
