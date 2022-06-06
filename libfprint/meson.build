@@ -121,6 +121,8 @@ driver_sources = {
         [ 'drivers/egis0570.c' ],
     'vfs0050' :
         [ 'drivers/vfs0050.c' ],
+    'vfs0090' :
+        [ 'drivers/vfs0090/vfs0090.c' ],
     'elan' :
         [ 'drivers/elan.c' ],
     'elanmoc' :
