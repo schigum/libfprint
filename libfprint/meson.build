@@ -150,6 +150,8 @@ helper_sources = {
         [ 'drivers/aesx660.c' ],
     'aes3k' :
         [ 'drivers/aes3k.c' ],
+    'openssl' :
+        [ ],
     'nss' :
         [ ],
     'udev' :
